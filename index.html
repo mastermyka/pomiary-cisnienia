@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Miernik ciśnienia — PWA</title>
+
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Miernik Ciśn.">
+
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/apple-touch-icon-167.png">
+
+<style>
+  :root{
+    --bg:#f7f8fb; --card:#fff; --accent:#0b6cf0; --muted:#6b7280;
+  }
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;background:var(--bg);color:#111}
+  .wrap{max-width:900px;margin:18px auto;padding:14px}
+  header{display:flex;align-items:center;gap:12px}
+  header h1{font-size:1.1rem;margin:0}
+  .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 1px 6px rgba(16,24,40,.06);margin-top:12px}
+  form .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  input[type=number],input[type=datetime-local],input[type=text],textarea,select{flex:1;padding:8px;border-radius:8px;border:1px solid #e6e9ef;background:white}
+  label{font-size:0.85rem;color:var(--muted);display:block;margin-bottom:6px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  button{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid #e6e9ef}
+  .list{margin-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:0.95rem}
+  th,td{padding:8px;border-bottom:1px solid #f1f3f7;text-align:left}
+  .small{font-size:0.85rem;color:var(--muted)}
+  .chartwrap{margin-top:12px;padding:8px}
+  canvas{width:100%;height:220px;border-radius:8px;background:linear-gradient(180deg,#fff, #fbfdff)}
+  .actions{display:flex;gap:6px;flex-wrap:wrap}
+  @media(max-width:640px){
+    .row{flex-direction:column}
+    header{gap:8px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icons/icon-192.png" width="42" height="42" alt="logo">
+    <div>
+      <h1>Miernik ciśnienia — PWA</h1>
+      <div class="small">Szybki zapis pomiarów ciśnienia i tętna. Działa offline.</div>
+    </div>
+  </header>
+
+  <div class="card" id="entryCard">
+    <form id="measureForm">
+      <div class="row">
+        <div style="flex:1">
+          <label for="ts">Data i godzina</label>
+          <input id="ts" type="datetime-local" required />
+        </div>
+        <div style="width:120px">
+          <label for="sys">Skurczowe (mmHg)</label>
+          <input id="sys" type="number" min="40" max="300" required />
+        </div>
+        <div style="width:120px">
+          <label for="dia">Rozkurczowe (mmHg)</label>
+          <input id="dia" type="number" min="30" max="200" required />
+        </div>
+        <div style="width:100px">
+          <label for="pulse">Tętno (bpm)</label>
+          <input id="pulse" type="number" min="20" max="220" />
+        </div>
+      </div>
+
+      <div>
+        <label for="note">Notatka (np. leki, objawy)</label>
+        <input id="note" type="text" placeholder="np. tabletka pod język, po spacerze" />
+      </div>
+
+      <div class="controls">
+        <button id="saveBtn" type="submit">Zapisz pomiar</button>
+        <button id="clearBtn" type="button" class="ghost">Wyczyść formularz</button>
+        <div style="flex:1"></div>
+        <div class="actions">
+          <button id="exportCsv" type="button" class="ghost">Eksportuj CSV</button>
+          <button id="importCsvBtn" type="button" class="ghost">Importuj CSV</button>
+          <input id="importCsv" type="file" accept=".csv" style="display:none" />
+          <button id="resetAll" type="button" class="ghost">Usuń wszystkie</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <strong>Historia pomiarów</strong>
+      <div class="small">Kliknij w wiersz, by edytować</div>
+    </div>
+
+    <div class="list" id="listWrap"></div>
+  </div>
+
+  <div class="card chartwrap">
+    <strong>Wykres (ostatnie 30 pomiarów)</strong>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <footer style="margin-top:12px;text-align:center" class="small card">
+    <div>Instrukcje instalacji: otwórz w Safari → przycisk Udostępnij → "Dodaj do ekranu początkowego".</div>
+    <div style="margin-top:6px">Działa offline. Dane przechowywane lokalnie w urządzeniu.</div>
+  </footer>
+</div>
+
+<script>
+/* Prosty PWA app — zapis w localStorage */
+const LS_KEY = 'bp_records_v1';
+
+function nowLocalISO(){
+  const d = new Date();
+  const pad = n=>n.toString().padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+
+const tsEl = document.getElementById('ts');
+const sysEl = document.getElementById('sys');
+const diaEl = document.getElementById('dia');
+const pulseEl = document.getElementById('pulse');
+const noteEl = document.getElementById('note');
+const listWrap = document.getElementById('listWrap');
+const chartCanvas = document.getElementById('chart');
+const ctx = chartCanvas.getContext('2d');
+
+tsEl.value = nowLocalISO();
+
+function loadRecords(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveRecords(arr){
+  localStorage.setItem(LS_KEY, JSON.stringify(arr));
+}
+
+function renderList(){
+  const r = loadRecords().slice().reverse();
+  if(r.length===0){
+    listWrap.innerHTML = '<div class="small">Brak zapisanych pomiarów.</div>';
+    renderChart();
+    return;
+  }
+  let html = '<table><thead><tr><th>Data</th><th>Skurczowe</th><th>Rozkurczowe</th><th>Tętno</th><th>Notatka</th><th></th></tr></thead><tbody>';
+  r.forEach((it)=>{
+    html += `<tr data-id="${it.id}">
+      <td>${new Date(it.ts).toLocaleString()}</td>
+      <td>${it.sys}</td>
+      <td>${it.dia}</td>
+      <td>${it.pulse||''}</td>
+      <td>${(it.note||'').slice(0,60)}</td>
+      <td><button class="ghost" data-edit="${it.id}">Edytuj</button> <button class="ghost" data-del="${it.id}">Usuń</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  listWrap.innerHTML = html;
+}
+
+function renderChart(){}
+
+renderList();
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
