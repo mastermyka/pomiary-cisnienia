@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "Miernik Ciśnienia",
-  "short_name": "Ciśnieniomierz",
+  "short_name": "Ciśnienie",
   "description": "Prosty PWA do zapisu pomiarów ciśnienia i tętna. Działa offline.",
-  "start_url": ".",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f7f8fb",
   "theme_color": "#0b6cf0",
@@ -15,7 +17,8 @@
     {
       "src": "icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
