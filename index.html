@@ -6,8 +6,11 @@
 <title>Miernik ciśnienia — PWA</title>
 
 <link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0b6cf0" />
+
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Miernik Ciśn.">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png">
 <link rel="apple-touch-icon" sizes="167x167" href="icons/apple-touch-icon-167.png">
@@ -29,7 +32,7 @@
   button.ghost{background:transparent;color:var(--accent);border:1px solid #e6e9ef}
   .list{margin-top:12px}
   table{width:100%;border-collapse:collapse;font-size:0.95rem}
-  th,td{padding:8px;border-bottom:1px solid #f1f3f7;text-align:left}
+  th,td{padding:8px;border-bottom:1px solid #f1f3f7;text-align:left;vertical-align:top}
   .small{font-size:0.85rem;color:var(--muted)}
   .chartwrap{margin-top:12px;padding:8px}
   canvas{width:100%;height:220px;border-radius:8px;background:linear-gradient(180deg,#fff, #fbfdff)}
@@ -93,9 +96,8 @@
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <strong>Historia pomiarów</strong>
-      <div class="small">Kliknij w wiersz, by edytować</div>
+      <div class="small">Kliknij „Edytuj”, by zmienić wpis</div>
     </div>
-
     <div class="list" id="listWrap"></div>
   </div>
 
@@ -105,13 +107,12 @@
   </div>
 
   <footer style="margin-top:12px;text-align:center" class="small card">
-    <div>Instrukcje instalacji: otwórz w Safari → przycisk Udostępnij → "Dodaj do ekranu początkowego".</div>
+    <div>Instrukcje instalacji (iPhone): Safari → Udostępnij → „Dodaj do ekranu początkowego”.</div>
     <div style="margin-top:6px">Działa offline. Dane przechowywane lokalnie w urządzeniu.</div>
   </footer>
 </div>
 
 <script>
-/* Prosty PWA app — zapis w localStorage */
 const LS_KEY = 'bp_records_v1';
 
 function nowLocalISO(){
@@ -119,7 +120,23 @@ function nowLocalISO(){
   const pad = n=>n.toString().padStart(2,'0');
   return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
 }
+function uid(){
+  return 'id_' + Math.random().toString(16).slice(2) + '_' + Date.now().toString(16);
+}
+function toLocalInputValue(dateOrString){
+  const d = (dateOrString instanceof Date) ? dateOrString : new Date(dateOrString);
+  const pad = n=>n.toString().padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function clampNum(v, min, max){
+  const n = Number(v);
+  if(!Number.isFinite(n)) return null;
+  if(n < min) return null;
+  if(n > max) return null;
+  return n;
+}
 
+const form = document.getElementById('measureForm');
 const tsEl = document.getElementById('ts');
 const sysEl = document.getElementById('sys');
 const diaEl = document.getElementById('dia');
@@ -129,20 +146,50 @@ const listWrap = document.getElementById('listWrap');
 const chartCanvas = document.getElementById('chart');
 const ctx = chartCanvas.getContext('2d');
 
+const clearBtn = document.getElementById('clearBtn');
+const exportCsvBtn = document.getElementById('exportCsv');
+const importCsvBtn = document.getElementById('importCsvBtn');
+const importCsvInput = document.getElementById('importCsv');
+const resetAllBtn = document.getElementById('resetAll');
+
 tsEl.value = nowLocalISO();
+let editingId = null;
 
 function loadRecords(){
   try{
     const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
   }catch(e){ return []; }
 }
 function saveRecords(arr){
   localStorage.setItem(LS_KEY, JSON.stringify(arr));
 }
+function sortByTsAsc(arr){
+  return arr.slice().sort((a,b)=> new Date(a.ts) - new Date(b.ts));
+}
+function clearForm(){
+  editingId = null;
+  tsEl.value = nowLocalISO();
+  sysEl.value = '';
+  diaEl.value = '';
+  pulseEl.value = '';
+  noteEl.value = '';
+}
+function upsertRecord(rec){
+  const arr = loadRecords();
+  const idx = arr.findIndex(x => x.id === rec.id);
+  if(idx >= 0) arr[idx] = rec;
+  else arr.push(rec);
+  saveRecords(sortByTsAsc(arr));
+}
+function deleteRecord(id){
+  const arr = loadRecords().filter(x => x.id !== id);
+  saveRecords(arr);
+}
 
 function renderList(){
-  const r = loadRecords().slice().reverse();
+  const r = sortByTsAsc(loadRecords()).slice().reverse();
   if(r.length===0){
     listWrap.innerHTML = '<div class="small">Brak zapisanych pomiarów.</div>';
     renderChart();
@@ -154,17 +201,356 @@ function renderList(){
       <td>${new Date(it.ts).toLocaleString()}</td>
       <td>${it.sys}</td>
       <td>${it.dia}</td>
-      <td>${it.pulse||''}</td>
+      <td>${it.pulse ?? ''}</td>
       <td>${(it.note||'').slice(0,60)}</td>
-      <td><button class="ghost" data-edit="${it.id}">Edytuj</button> <button class="ghost" data-del="${it.id}">Usuń</button></td>
+      <td>
+        <button class="ghost" data-edit="${it.id}" type="button">Edytuj</button>
+        <button class="ghost" data-del="${it.id}" type="button">Usuń</button>
+      </td>
     </tr>`;
   });
   html += '</tbody></table>';
   listWrap.innerHTML = html;
+  renderChart();
 }
 
-function renderChart(){}
+/* ===== WYKRES (canvas) ===== */
+function resizeCanvasToDisplaySize(canvas){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if(canvas.width !== w || canvas.height !== h){
+    canvas.width = w;
+    canvas.height = h;
+  }
+  return {w, h};
+}
+function drawLine(points, x0, y0, w, h, yMin, yMax, getY, dashed=false){
+  if(points.length < 2) return;
+  ctx.save();
+  ctx.lineWidth = 2;
+  if(dashed) ctx.setLineDash([6,6]);
+  ctx.beginPath();
+  for(let i=0;i<points.length;i++){
+    const x = x0 + (i/(points.length-1))*w;
+    const yVal = getY(points[i]);
+    const y = y0 + h - ((yVal - yMin)/(yMax - yMin))*h;
+    if(i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+function renderChart(){
+  const all = sortByTsAsc(loadRecords());
+  const points = all.slice(-30);
+  const {w, h} = resizeCanvasToDisplaySize(chartCanvas);
 
+  ctx.clearRect(0,0,w,h);
+
+  const pad = 22;
+  const x0 = pad*2;
+  const y0 = pad;
+  const plotW = w - x0 - pad;
+  const plotH = h - y0 - pad*1.8;
+
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,w,h);
+  ctx.restore();
+
+  if(points.length === 0){
+    ctx.save();
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '14px system-ui';
+    ctx.fillText('Brak danych do wykresu.', x0, y0 + 20);
+    ctx.restore();
+    return;
+  }
+
+  const sysVals = points.map(p=>p.sys).filter(Number.isFinite);
+  const diaVals = points.map(p=>p.dia).filter(Number.isFinite);
+  const pulseVals = points.map(p=>p.pulse).filter(Number.isFinite);
+
+  let yMin = Math.min(...sysVals, ...diaVals);
+  let yMax = Math.max(...sysVals, ...diaVals);
+  yMin = Math.floor((yMin - 10)/10)*10;
+  yMax = Math.ceil((yMax + 10)/10)*10;
+
+  ctx.save();
+  ctx.strokeStyle = '#eef2f7';
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '12px system-ui';
+  const ticks = 5;
+  for(let t=0;t<=ticks;t++){
+    const yy = y0 + plotH - (t/ticks)*plotH;
+    ctx.beginPath();
+    ctx.moveTo(x0, yy);
+    ctx.lineTo(x0+plotW, yy);
+    ctx.stroke();
+    const val = yMin + (t/ticks)*(yMax - yMin);
+    ctx.fillText(String(Math.round(val)), pad, yy+4);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = '#e6e9ef';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x0, y0+plotH);
+  ctx.lineTo(x0+plotW, y0+plotH);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = '#0b6cf0';
+  drawLine(points, x0, y0, plotW, plotH, yMin, yMax, p=>p.sys, false);
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = '#10b981';
+  drawLine(points, x0, y0, plotW, plotH, yMin, yMax, p=>p.dia, false);
+  ctx.restore();
+
+  if(pulseVals.length >= 2){
+    const pMin = Math.min(...pulseVals);
+    const pMax = Math.max(...pulseVals);
+    if(pMax > pMin){
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      drawLine(points, x0, y0, plotW, plotH, yMin, yMax, p=>{
+        if(!Number.isFinite(p.pulse)) return yMin;
+        const k = (p.pulse - pMin)/(pMax - pMin);
+        return yMin + k*(yMax - yMin);
+      }, true);
+      ctx.restore();
+    }
+  }
+
+  ctx.save();
+  ctx.font = '12px system-ui';
+  ctx.fillStyle = '#111';
+  ctx.fillText('SYS', x0, y0 + plotH + 18);
+  ctx.fillStyle = '#0b6cf0';
+  ctx.fillRect(x0 + 32, y0 + plotH + 9, 18, 3);
+
+  ctx.fillStyle = '#111';
+  ctx.fillText('DIA', x0 + 60, y0 + plotH + 18);
+  ctx.fillStyle = '#10b981';
+  ctx.fillRect(x0 + 92, y0 + plotH + 9, 18, 3);
+
+  ctx.fillStyle = '#111';
+  ctx.fillText('PULSE', x0 + 120, y0 + plotH + 18);
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillRect(x0 + 170, y0 + plotH + 9, 18, 3);
+  ctx.restore();
+}
+window.addEventListener('resize', ()=>renderChart());
+
+/* ===== CSV ===== */
+function csvEscape(v){
+  const s = (v ?? '').toString();
+  if(/[",\n;]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
+}
+function downloadFile(name, text, mime='text/plain'){
+  const blob = new Blob([text], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+function parseCSV(text){
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQ = false;
+
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    const nxt = text[i+1];
+
+    if(inQ){
+      if(ch === '"' && nxt === '"'){ cur += '"'; i++; continue; }
+      if(ch === '"'){ inQ = false; continue; }
+      cur += ch;
+    }else{
+      if(ch === '"'){ inQ = true; continue; }
+      if(ch === ','){ row.push(cur); cur=''; continue; }
+      if(ch === '\n' || ch === '\r'){
+        if(ch === '\r' && nxt === '\n') i++;
+        row.push(cur); cur='';
+        if(row.length>1 || row[0]!=='' ) rows.push(row);
+        row = [];
+        continue;
+      }
+      cur += ch;
+    }
+  }
+  row.push(cur);
+  if(row.length>1 || row[0]!=='' ) rows.push(row);
+  return rows;
+}
+
+/* ===== ZDARZENIA UI ===== */
+form.addEventListener('submit', (e)=>{
+  e.preventDefault();
+
+  const ts = tsEl.value ? new Date(tsEl.value).toISOString() : null;
+  const sys = clampNum(sysEl.value, 40, 300);
+  const dia = clampNum(diaEl.value, 30, 200);
+  const pulseRaw = (pulseEl.value || '').trim();
+  const pulse = pulseRaw ? clampNum(pulseRaw, 20, 220) : null;
+  const note = (noteEl.value || '').trim();
+
+  if(!ts || sys === null || dia === null){
+    alert('Uzupełnij poprawnie datę oraz wartości SYS/DIA.');
+    return;
+  }
+
+  const rec = {
+    id: editingId || uid(),
+    ts,
+    sys,
+    dia,
+    pulse,
+    note
+  };
+
+  upsertRecord(rec);
+  clearForm();
+  renderList();
+});
+
+clearBtn.addEventListener('click', ()=>{
+  clearForm();
+});
+
+listWrap.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+
+  const editId = btn.getAttribute('data-edit');
+  const delId = btn.getAttribute('data-del');
+
+  if(editId){
+    const rec = loadRecords().find(x=>x.id === editId);
+    if(!rec) return;
+    editingId = rec.id;
+    tsEl.value = toLocalInputValue(rec.ts);
+    sysEl.value = rec.sys;
+    diaEl.value = rec.dia;
+    pulseEl.value = rec.pulse ?? '';
+    noteEl.value = rec.note ?? '';
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    return;
+  }
+
+  if(delId){
+    if(confirm('Usunąć ten pomiar?')){
+      deleteRecord(delId);
+      renderList();
+    }
+  }
+});
+
+resetAllBtn.addEventListener('click', ()=>{
+  if(confirm('Na pewno usunąć WSZYSTKIE pomiary?')){
+    saveRecords([]);
+    clearForm();
+    renderList();
+  }
+});
+
+exportCsvBtn.addEventListener('click', ()=>{
+  const arr = sortByTsAsc(loadRecords());
+  const header = ['ts','sys','dia','pulse','note'];
+  const lines = [header.join(',')];
+  arr.forEach(r=>{
+    lines.push([
+      csvEscape(r.ts),
+      csvEscape(r.sys),
+      csvEscape(r.dia),
+      csvEscape(r.pulse ?? ''),
+      csvEscape(r.note ?? '')
+    ].join(','));
+  });
+  const stamp = new Date().toISOString().slice(0,10);
+  downloadFile(`cisnienie_${stamp}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
+});
+
+importCsvBtn.addEventListener('click', ()=>{
+  importCsvInput.value = '';
+  importCsvInput.click();
+});
+
+importCsvInput.addEventListener('change', async ()=>{
+  const file = importCsvInput.files && importCsvInput.files[0];
+  if(!file) return;
+
+  const text = await file.text();
+  const rows = parseCSV(text.trim());
+  if(rows.length < 2){
+    alert('CSV wygląda na pusty.');
+    return;
+  }
+
+  const header = rows[0].map(h=>h.trim().toLowerCase());
+  const idx = (name)=> header.indexOf(name);
+
+  const iTs = idx('ts');
+  const iSys = idx('sys');
+  const iDia = idx('dia');
+  const iPulse = idx('pulse');
+  const iNote = idx('note');
+
+  if(iTs < 0 || iSys < 0 || iDia < 0){
+    alert('CSV musi mieć kolumny: ts, sys, dia (opcjonalnie: pulse, note).');
+    return;
+  }
+
+  const imported = [];
+  for(let r=1;r<rows.length;r++){
+    const line = rows[r];
+    const tsRaw = (line[iTs] || '').trim();
+    const sysRaw = (line[iSys] || '').trim();
+    const diaRaw = (line[iDia] || '').trim();
+    const pulseRaw = iPulse>=0 ? (line[iPulse]||'').trim() : '';
+    const noteRaw = iNote>=0 ? (line[iNote]||'').trim() : '';
+
+    const tsDate = new Date(tsRaw);
+    if(!tsRaw || isNaN(tsDate.getTime())) continue;
+
+    const sys = clampNum(sysRaw, 40, 300);
+    const dia = clampNum(diaRaw, 30, 200);
+    const pulse = pulseRaw ? clampNum(pulseRaw, 20, 220) : null;
+    if(sys===null || dia===null) continue;
+
+    imported.push({
+      id: uid(),
+      ts: tsDate.toISOString(),
+      sys, dia, pulse,
+      note: noteRaw
+    });
+  }
+
+  if(imported.length === 0){
+    alert('Nie udało się zaimportować żadnego poprawnego wiersza.');
+    return;
+  }
+
+  const merged = sortByTsAsc(loadRecords().concat(imported));
+  saveRecords(merged);
+  renderList();
+  alert(`Zaimportowano: ${imported.length} pomiarów.`);
+});
+
+/* START */
 renderList();
 
 if('serviceWorker' in navigator){
