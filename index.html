@@ -101,6 +101,12 @@
     max-width: 100%;
   }
 }
+  /* zapobiega poziomemu rozpychaniu całej aplikacji */
+html, body { overflow-x: hidden; }
+
+/* tabela może się przewijać w poziomie zamiast rozpychać layout */
+.list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.list table { min-width: 760px; }  /* wymusza sensowną szerokość tabeli */
 </style>
 </head>
 <body>
