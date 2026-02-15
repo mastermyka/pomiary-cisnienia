@@ -80,6 +80,27 @@
   @media(max-width:820px){
     .kpi{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
+  /* Telefon / wąskie ekrany: nie pozwól polom wymuszać min-width i rozpychać layoutu */
+@media (max-width: 640px){
+  /* najważniejsze: wyłącz min-width, bo to robi overflow */
+  input[type=text], textarea, select, input[type=datetime-local]{
+    min-width: 0 !important;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* kontenery w wierszu niech nie mają własnych minimalnych szerokości */
+  form .row > div{
+    min-width: 0 !important;
+    width: 100% !important;
+    flex: 1 1 100%;
+  }
+
+  /* checkboxy: niech się ładnie łamią */
+  #measureForm .row label{
+    max-width: 100%;
+  }
+}
 </style>
 </head>
 <body>
