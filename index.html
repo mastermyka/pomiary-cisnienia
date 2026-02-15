@@ -52,6 +52,7 @@
   .pill.hnorm{color:var(--warn);border-color:#fde68a;background:#fffbeb}
   .pill.htn{color:var(--bad);border-color:#fecaca;background:#fef2f2}
   .pill.crisis{color:var(--crisis);border-color:#fecaca;background:#fee2e2}
+  .pill.good{color:#2563eb;border-color:#bfdbfe;background:#eff6ff}
   .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
   .kpi .box{border:1px solid #eef2f7;border-radius:12px;padding:10px}
   .kpi .val{font-weight:800;font-size:1.05rem}
@@ -77,6 +78,7 @@
   .modalFoot{padding:0 12px 12px 12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
   .xbtn{background:transparent;border:1px solid #e6e9ef;color:#111}
   .muted{color:var(--muted)}
+  .hint{font-size:0.82rem;color:var(--muted);margin-top:6px}
   @media(max-width:820px){
     .kpi{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
@@ -103,12 +105,10 @@
 
   /* tabela może się przewijać w poziomie zamiast rozpychać layout */
   .list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .list table { min-width: 760px; }
+  .list table { min-width: 920px; }
 
   /* iPhone Safari: nie zoomuj strony po tapnięciu w pole */
-  input, select, textarea, button {
-    font-size: 16px !important;
-  }
+  input, select, textarea, button { font-size: 16px !important; }
   #measureForm label, #dlgForm label { font-size: 14px; }
 </style>
 </head>
@@ -131,15 +131,22 @@
         </div>
         <div>
           <label for="sys">Skurczowe (mmHg)</label>
-          <input id="sys" type="number" min="40" max="300" required />
+          <input id="sys" type="number" min="40" max="300" required inputmode="numeric" />
         </div>
         <div>
           <label for="dia">Rozkurczowe (mmHg)</label>
-          <input id="dia" type="number" min="30" max="200" required />
+          <input id="dia" type="number" min="30" max="200" required inputmode="numeric" />
         </div>
         <div>
           <label for="pulse">Tętno (bpm)</label>
-          <input id="pulse" type="number" min="20" max="220" />
+          <input id="pulse" type="number" min="20" max="220" inputmode="numeric" />
+        </div>
+        <div>
+          <label for="mtype">Typ pomiaru</label>
+          <select id="mtype">
+            <option value="domowy" selected>Domowy</option>
+            <option value="gabinetowy">Gabinetowy</option>
+          </select>
         </div>
         <div>
           <label for="pos">Pozycja</label>
@@ -159,6 +166,9 @@
             <label style="display:flex;gap:8px;align-items:center;margin:0;color:#111;font-size:0.9rem">
               <input id="meds" type="checkbox"> leki wzięte
             </label>
+            <label style="display:flex;gap:8px;align-items:center;margin:0;color:#111;font-size:0.9rem">
+              <input id="valid" type="checkbox" checked> pomiar poprawny
+            </label>
           </div>
         </div>
       </div>
@@ -166,10 +176,12 @@
       <div style="margin-top:6px">
         <label for="note">Notatka (np. leki, objawy)</label>
         <input id="note" type="text" placeholder="np. po spacerze, ból głowy, amlodypina" />
+        <div class="hint">Tip: „pomiar poprawny” odznacz, jeśli np. kawa, stres, brak odpoczynku, zły mankiet.</div>
       </div>
 
       <div class="controls">
         <button id="saveBtn" type="submit">Zapisz pomiar</button>
+        <button id="copyLast" type="button" class="ghost">Skopiuj ostatni kontekst</button>
         <button id="clearBtn" type="button" class="ghost">Wyczyść formularz</button>
         <div style="flex:1"></div>
         <div class="actions">
@@ -180,6 +192,7 @@
           <button id="importJsonBtn" type="button" class="ghost">Przywróć JSON</button>
           <input id="importJson" type="file" accept=".json" style="display:none" />
           <button id="printReport" type="button" class="ghost">Raport / druk</button>
+          <button id="printDoctor" type="button" class="ghost">Raport dla lekarza</button>
           <button id="resetAll" type="button" class="danger">Usuń wszystkie</button>
         </div>
       </div>
@@ -214,6 +227,13 @@
           <option value="asc">Najstarsze → najnowsze</option>
         </select>
       </div>
+      <div class="f">
+        <label for="onlyValid">Tylko poprawne</label>
+        <select id="onlyValid">
+          <option value="all" selected>Wszystkie</option>
+          <option value="yes">Tylko „poprawne”</option>
+        </select>
+      </div>
       <div class="f" style="flex:1;min-width:240px">
         <label for="searchNote">Szukaj (notatka/kontekst)</label>
         <input id="searchNote" type="text" placeholder="np. amlodypina, spacer, ból" />
@@ -226,7 +246,7 @@
   <div class="card chartwrap">
     <strong>Wykres (ostatnie 30 pomiarów)</strong>
     <canvas id="chart"></canvas>
-    <div class="small" style="margin-top:6px">Status wg ESC/ESH (Europa): optymalne, prawidłowe, wysokie prawidłowe, nadciśnienie (+ alert ≥180/120).</div>
+    <div class="small" style="margin-top:6px">Status wg ESC/ESH (Europa): optymalne, prawidłowe, wysokie prawidłowe, nadciśnienie (+ alert ≥180/120). Linie referencyjne: SYS 140, DIA 90.</div>
   </div>
 
   <footer style="margin-top:12px;text-align:center" class="small card">
@@ -257,15 +277,22 @@
         </div>
         <div>
           <label for="d_sys">Skurczowe</label>
-          <input id="d_sys" type="number" min="40" max="300" required />
+          <input id="d_sys" type="number" min="40" max="300" required inputmode="numeric" />
         </div>
         <div>
           <label for="d_dia">Rozkurczowe</label>
-          <input id="d_dia" type="number" min="30" max="200" required />
+          <input id="d_dia" type="number" min="30" max="200" required inputmode="numeric" />
         </div>
         <div>
           <label for="d_pulse">Tętno</label>
-          <input id="d_pulse" type="number" min="20" max="220" />
+          <input id="d_pulse" type="number" min="20" max="220" inputmode="numeric" />
+        </div>
+        <div>
+          <label for="d_mtype">Typ</label>
+          <select id="d_mtype">
+            <option value="domowy">Domowy</option>
+            <option value="gabinetowy">Gabinetowy</option>
+          </select>
         </div>
         <div>
           <label for="d_pos">Pozycja</label>
@@ -287,6 +314,9 @@
           <label style="display:flex;gap:8px;align-items:center;margin:0;color:#111;font-size:0.9rem">
             <input id="d_meds" type="checkbox"> leki wzięte
           </label>
+          <label style="display:flex;gap:8px;align-items:center;margin:0;color:#111;font-size:0.9rem">
+            <input id="d_valid" type="checkbox"> pomiar poprawny
+          </label>
         </div>
       </div>
 
@@ -305,7 +335,7 @@
 </dialog>
 
 <script>
-const LS_KEY = 'bp_records_v2';
+const LS_KEY = 'bp_records_v3';
 
 function nowLocalISO(){
   const d = new Date();
@@ -339,8 +369,11 @@ const noteEl = document.getElementById('note');
 const posEl = document.getElementById('pos');
 const restedEl = document.getElementById('rested');
 const medsEl = document.getElementById('meds');
+const validEl = document.getElementById('valid');
+const mtypeEl = document.getElementById('mtype');
 
 const clearBtn = document.getElementById('clearBtn');
+const copyLastBtn = document.getElementById('copyLast');
 const exportCsvBtn = document.getElementById('exportCsv');
 const importCsvBtn = document.getElementById('importCsvBtn');
 const importCsvInput = document.getElementById('importCsv');
@@ -349,6 +382,7 @@ const importJsonBtn = document.getElementById('importJsonBtn');
 const importJsonInput = document.getElementById('importJson');
 const resetAllBtn = document.getElementById('resetAll');
 const printReportBtn = document.getElementById('printReport');
+const printDoctorBtn = document.getElementById('printDoctor');
 
 const listWrap = document.getElementById('listWrap');
 const chartCanvas = document.getElementById('chart');
@@ -356,6 +390,7 @@ const ctx = chartCanvas.getContext('2d');
 
 const rangeSel = document.getElementById('rangeSel');
 const sortSel = document.getElementById('sortSel');
+const onlyValidSel = document.getElementById('onlyValid');
 const searchNote = document.getElementById('searchNote');
 const countInfo = document.getElementById('countInfo');
 const kpiWrap = document.getElementById('kpi');
@@ -379,6 +414,8 @@ const d_note = document.getElementById('d_note');
 const d_pos = document.getElementById('d_pos');
 const d_rested = document.getElementById('d_rested');
 const d_meds = document.getElementById('d_meds');
+const d_valid = document.getElementById('d_valid');
+const d_mtype = document.getElementById('d_mtype');
 
 tsEl.value = nowLocalISO();
 
@@ -410,7 +447,9 @@ function migrateRecord(r){
     note: safeStr(r.note || ''),
     pos: safeStr(r.pos || ''),
     rested: !!r.rested,
-    meds: !!r.meds
+    meds: !!r.meds,
+    valid: (r.valid === undefined) ? true : !!r.valid,
+    mtype: (r.mtype === 'gabinetowy' || r.mtype === 'domowy') ? r.mtype : 'domowy'
   };
   if(!Number.isFinite(out.sys) || !Number.isFinite(out.dia)) return null;
   if(out.pulse !== null && !Number.isFinite(out.pulse)) out.pulse = null;
@@ -438,9 +477,11 @@ function clearForm(){
   posEl.value = '';
   restedEl.checked = false;
   medsEl.checked = false;
+  validEl.checked = true;
+  mtypeEl.value = 'domowy';
 }
 
-/* ESC/ESH (Europa) - pomiar gabinetowy + alert UI */
+/* ===== KLASYFIKACJA ESC/ESH (Europa) + alert UI ===== */
 function classifyBP(sys, dia){
   if(sys >= 180 || dia >= 120) return {key:'crisis', label:'B. wysokie', cls:'crisis'};
   if(sys >= 140 || dia >= 90) return {key:'htn', label:'Nadciśnienie', cls:'htn'};
@@ -456,10 +497,15 @@ function posLabel(v){
   if(v==='stojaca') return 'stojąca';
   return '';
 }
+function typeLabel(v){
+  if(v==='gabinetowy') return 'gabinetowy';
+  return 'domowy';
+}
 
 function applyFilters(arr){
   const range = rangeSel.value;
   const q = normText(searchNote.value);
+  const onlyValid = onlyValidSel.value;
 
   let out = arr.slice();
 
@@ -473,13 +519,19 @@ function applyFilters(arr){
     }
   }
 
+  if(onlyValid === 'yes'){
+    out = out.filter(r => !!r.valid);
+  }
+
   if(q){
     out = out.filter(r=>{
       const blob = [
         r.note,
+        typeLabel(r.mtype),
         posLabel(r.pos),
         r.rested ? 'odpoczynek' : '',
-        r.meds ? 'leki' : ''
+        r.meds ? 'leki' : '',
+        r.valid ? 'poprawny' : 'niepoprawny'
       ].join(' ');
       return normText(blob).includes(q);
     });
@@ -506,11 +558,30 @@ function minmax(nums){
   if(!v.length) return {min:null,max:null};
   return {min:Math.min(...v), max:Math.max(...v)};
 }
-function daysRangeStats(all, days){
+function sliceLastN(arr, n){
+  const a = arr.slice();
+  return a.slice(Math.max(0, a.length - n));
+}
+function lastNAvg(allAsc, n){
+  const last = sliceLastN(allAsc, n);
+  const sys = last.map(r=>r.sys);
+  const dia = last.map(r=>r.dia);
+  const pulse = last.map(r=>r.pulse ?? null);
+  return {
+    count: last.length,
+    sysAvg: avg(sys),
+    diaAvg: avg(dia),
+    pulseAvg: avg(pulse),
+    sysMM: minmax(sys),
+    diaMM: minmax(dia),
+    pulseMM: minmax(pulse)
+  };
+}
+function daysRangeStats(allAsc, days){
   const from = new Date();
   from.setHours(0,0,0,0);
   from.setDate(from.getDate() - (days - 1));
-  const part = all.filter(r=> new Date(r.ts) >= from);
+  const part = allAsc.filter(r=> new Date(r.ts) >= from);
   const sys = part.map(r=>r.sys);
   const dia = part.map(r=>r.dia);
   const pulse = part.map(r=>r.pulse ?? null);
@@ -522,7 +593,8 @@ function daysRangeStats(all, days){
     pulseAvg: avg(pulse),
     sysMM: minmax(sys),
     diaMM: minmax(dia),
-    pulseMM: minmax(pulse)
+    pulseMM: minmax(pulse),
+    above140_90: part.filter(r => r.sys >= 140 || r.dia >= 90).length
   };
 }
 function trendArrow(a, b){
@@ -532,17 +604,18 @@ function trendArrow(a, b){
   return diff > 0 ? '↑' : '↓';
 }
 
-function renderKPI(all){
-  const s7 = daysRangeStats(all, 7);
-  const s30 = daysRangeStats(all, 30);
+function renderKPI(allAsc){
+  const s3 = lastNAvg(allAsc, 3);
+  const s7 = daysRangeStats(allAsc, 7);
+  const s30 = daysRangeStats(allAsc, 30);
 
   const sysArrow = trendArrow(s7.sysAvg, s30.sysAvg);
   const diaArrow = trendArrow(s7.diaAvg, s30.diaAvg);
 
   const blocks = [
-    { val: `${fmt2(s7.sysAvg)}/${fmt2(s7.diaAvg)} ${sysArrow}${diaArrow}`, lbl: `Średnia 7 dni (SYS/DIA) • pomiarów: ${s7.count}` },
-    { val: `${fmt2(s30.sysAvg)}/${fmt2(s30.diaAvg)}`, lbl: `Średnia 30 dni (SYS/DIA) • pomiarów: ${s30.count}` },
-    { val: `${fmt2(s30.sysMM.min)}–${fmt2(s30.sysMM.max)} / ${fmt2(s30.diaMM.min)}–${fmt2(s30.diaMM.max)}`, lbl: `Min–max 30 dni (SYS / DIA)` },
+    { val: `${fmt2(s3.sysAvg)}/${fmt2(s3.diaAvg)}`, lbl: `Średnia ostatnich 3 • pomiarów: ${s3.count}` },
+    { val: `${fmt2(s7.sysAvg)}/${fmt2(s7.diaAvg)} ${sysArrow}${diaArrow}`, lbl: `Średnia 7 dni • pomiarów: ${s7.count}` },
+    { val: `${fmt2(s30.sysAvg)}/${fmt2(s30.diaAvg)}`, lbl: `Średnia 30 dni • pomiarów: ${s30.count}` },
     { val: `${fmt2(s30.pulseAvg)}`, lbl: `Średnie tętno 30 dni (bpm)` }
   ];
 
@@ -568,7 +641,7 @@ function renderList(){
   }
 
   let html = '<table><thead><tr>' +
-    '<th>Data</th><th>SYS</th><th>DIA</th><th>Tętno</th><th>Status</th><th>Kontekst</th><th>Notatka</th><th></th>' +
+    '<th>Data</th><th>SYS</th><th>DIA</th><th>Tętno</th><th>Status</th><th>Typ</th><th>Poprawny</th><th>Kontekst</th><th>Notatka</th><th></th>' +
     '</tr></thead><tbody>';
 
   view.forEach((it)=>{
@@ -585,6 +658,8 @@ function renderList(){
       <td>${it.dia}</td>
       <td>${it.pulse ?? ''}</td>
       <td><span class="pill ${cls.cls}">${cls.label}</span></td>
+      <td class="small">${typeLabel(it.mtype)}</td>
+      <td>${it.valid ? '<span class="pill good">TAK</span>' : '<span class="pill hnorm">NIE</span>'}</td>
       <td class="small">${ctxText}</td>
       <td>${(it.note||'').slice(0,80)}</td>
       <td><button class="ghost" data-edit="${it.id}" type="button">Edytuj</button></td>
@@ -597,7 +672,7 @@ function renderList(){
   renderChart();
 }
 
-/* ===== WYKRES ===== */
+/* ===== WYKRES (ostatnie 30) + linie referencyjne 140/90 ===== */
 function resizeCanvasToDisplaySize(canvas){
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -623,6 +698,23 @@ function drawLine(points, x0, y0, w, h, yMin, yMax, getY, dashed=false){
     else ctx.lineTo(x,y);
   }
   ctx.stroke();
+  ctx.restore();
+}
+function drawRefLine(yValue, label, x0, y0, w, h, yMin, yMax){
+  if(yValue < yMin || yValue > yMax) return;
+  const y = y0 + h - ((yValue - yMin)/(yMax - yMin))*h;
+  ctx.save();
+  ctx.setLineDash([5,6]);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#9ca3af';
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x0+w, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '12px system-ui';
+  ctx.fillText(label, x0 + 6, y - 6);
   ctx.restore();
 }
 function renderChart(){
@@ -687,6 +779,9 @@ function renderChart(){
   ctx.stroke();
   ctx.restore();
 
+  drawRefLine(140, 'SYS 140', x0, y0, plotW, plotH, yMin, yMax);
+  drawRefLine(90, 'DIA 90', x0, y0, plotW, plotH, yMin, yMax);
+
   ctx.save();
   ctx.strokeStyle = '#0b6cf0';
   drawLine(points, x0, y0, plotW, plotH, yMin, yMax, p=>p.sys, false);
@@ -714,7 +809,7 @@ function renderChart(){
 }
 window.addEventListener('resize', ()=>renderChart());
 
-/* ===== CSV / JSON ===== */
+/* ===== CSV ===== */
 function csvEscape(v){
   const s = (v ?? '').toString();
   if(/[",\n;]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
@@ -762,10 +857,11 @@ function parseCSV(text){
   return rows;
 }
 
+/* ===== JSON BACKUP ===== */
 function exportJSON(){
   const payload = {
     app: 'bp-pwa',
-    version: 2,
+    version: 3,
     exported_at: new Date().toISOString(),
     records: sortByTsAsc(loadRecords())
   };
@@ -806,6 +902,8 @@ function openEdit(id){
   d_pos.value = rec.pos ?? '';
   d_rested.checked = !!rec.rested;
   d_meds.checked = !!rec.meds;
+  d_valid.checked = !!rec.valid;
+  d_mtype.value = rec.mtype || 'domowy';
 
   if(typeof editDlg.showModal === 'function') editDlg.showModal();
   else editDlg.setAttribute('open','open');
@@ -814,6 +912,19 @@ function closeEdit(){
   currentEditId = null;
   if(typeof editDlg.close === 'function') editDlg.close();
   else editDlg.removeAttribute('open');
+}
+function validateLogic(sys, dia){
+  if(sys !== null && dia !== null && dia >= sys){
+    return 'Rozkurczowe (DIA) nie powinno być większe/równe skurczowemu (SYS). Sprawdź wpis.';
+  }
+  return null;
+}
+function needsConfirmUnusual(sys, dia, pulse){
+  const flags = [];
+  if(sys !== null && (sys < 80 || sys > 220)) flags.push(`SYS=${sys}`);
+  if(dia !== null && (dia < 50 || dia > 140)) flags.push(`DIA=${dia}`);
+  if(pulse !== null && (pulse < 35 || pulse > 180)) flags.push(`Tętno=${pulse}`);
+  return flags;
 }
 function saveEdit(){
   if(!currentEditId) return;
@@ -827,21 +938,33 @@ function saveEdit(){
   const pos = safeStr(d_pos.value);
   const rested = !!d_rested.checked;
   const meds = !!d_meds.checked;
+  const valid = !!d_valid.checked;
+  const mtype = (d_mtype.value === 'gabinetowy') ? 'gabinetowy' : 'domowy';
 
   if(!ts || sys === null || dia === null){
     alert('Uzupełnij poprawnie datę oraz wartości SYS/DIA.');
     return;
   }
 
-  const rec = { id: currentEditId, ts, sys, dia, pulse, note, pos, rested, meds };
+  const logicErr = validateLogic(sys, dia);
+  if(logicErr){ alert(logicErr); return; }
+
+  const flags = needsConfirmUnusual(sys, dia, pulse);
+  if(flags.length){
+    const ok = confirm(`Nietypowe wartości (${flags.join(', ')}). Zapisać mimo to?`);
+    if(!ok) return;
+  }
+
+  const rec = { id: currentEditId, ts, sys, dia, pulse, note, pos, rested, meds, valid, mtype };
   upsertRecord(rec);
   closeEdit();
   renderList();
 }
 
 /* ===== RAPORT / DRUK ===== */
-function makeReportHTML(records){
+function makeReportHTML(records, opts){
   const allAsc = sortByTsAsc(records);
+  const last3 = lastNAvg(allAsc, 3);
   const s7 = daysRangeStats(allAsc, 7);
   const s30 = daysRangeStats(allAsc, 30);
 
@@ -852,12 +975,17 @@ function makeReportHTML(records){
     if(r.rested) ctxParts.push('odpoczynek');
     if(r.meds) ctxParts.push('leki');
     const ctxText = ctxParts.join(', ');
+    const validTxt = r.valid ? 'TAK' : 'NIE';
+    const typeTxt = typeLabel(r.mtype);
+
     return `
       <tr>
         <td>${new Date(r.ts).toLocaleString()}</td>
+        <td>${typeTxt}</td>
         <td>${r.sys}</td>
         <td>${r.dia}</td>
         <td>${r.pulse ?? ''}</td>
+        <td>${validTxt}</td>
         <td>${c.label}</td>
         <td>${ctxText}</td>
         <td>${(r.note||'').replace(/</g,'&lt;')}</td>
@@ -869,10 +997,10 @@ function makeReportHTML(records){
     <style>
       body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
       h1{margin:0 0 6px 0;font-size:18px}
-      .sub{color:#555;margin:0 0 16px 0;font-size:12px}
-      .k{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 16px 0}
+      .sub{color:#555;margin:0 0 14px 0;font-size:12px}
+      .k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 16px 0}
       .box{border:1px solid #ddd;border-radius:10px;padding:10px}
-      .val{font-weight:800;font-size:14px}
+      .val{font-weight:800;font-size:13px}
       .lbl{color:#666;font-size:11px;margin-top:4px}
       table{width:100%;border-collapse:collapse;font-size:12px}
       th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
@@ -881,24 +1009,28 @@ function makeReportHTML(records){
     </style>
   `;
 
+  const extra = opts?.extraInfo || '';
+  const title = opts?.title || 'Raport pomiarów ciśnienia';
+
   const kpi = `
     <div class="k">
-      <div class="box"><div class="val">${fmt2(s7.sysAvg)}/${fmt2(s7.diaAvg)}</div><div class="lbl">Średnia 7 dni • pomiarów: ${s7.count}</div></div>
-      <div class="box"><div class="val">${fmt2(s30.sysAvg)}/${fmt2(s30.diaAvg)}</div><div class="lbl">Średnia 30 dni • pomiarów: ${s30.count}</div></div>
+      <div class="box"><div class="val">${fmt2(last3.sysAvg)}/${fmt2(last3.diaAvg)}</div><div class="lbl">Średnia ostatnich 3 • pomiarów: ${last3.count}</div></div>
+      <div class="box"><div class="val">${fmt2(s7.sysAvg)}/${fmt2(s7.diaAvg)}</div><div class="lbl">Średnia 7 dni • pomiarów: ${s7.count} • ≥140/90: ${s7.above140_90}</div></div>
+      <div class="box"><div class="val">${fmt2(s30.sysAvg)}/${fmt2(s30.diaAvg)}</div><div class="lbl">Średnia 30 dni • pomiarów: ${s30.count} • ≥140/90: ${s30.above140_90}</div></div>
       <div class="box"><div class="val">${fmt2(s30.sysMM.min)}–${fmt2(s30.sysMM.max)} / ${fmt2(s30.diaMM.min)}–${fmt2(s30.diaMM.max)}</div><div class="lbl">Min–max 30 dni (SYS/DIA)</div></div>
     </div>
   `;
 
   return `
     <!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Raport ciśnienia</title>${style}</head><body>
+    <title>${title}</title>${style}</head><body>
     <button onclick="window.print()">Drukuj</button>
-    <h1>Raport pomiarów ciśnienia</h1>
-    <p class="sub">Wygenerowano: ${new Date().toLocaleString()} • Rekordów: ${allAsc.length}</p>
+    <h1>${title}</h1>
+    <p class="sub">Wygenerowano: ${new Date().toLocaleString()} • Rekordów: ${allAsc.length}${extra}</p>
     ${kpi}
     <table>
       <thead>
-        <tr><th>Data</th><th>SYS</th><th>DIA</th><th>Tętno</th><th>Status</th><th>Kontekst</th><th>Notatka</th></tr>
+        <tr><th>Data</th><th>Typ</th><th>SYS</th><th>DIA</th><th>Tętno</th><th>Poprawny</th><th>Status</th><th>Kontekst</th><th>Notatka</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
@@ -907,15 +1039,46 @@ function makeReportHTML(records){
 }
 function openReport(){
   const records = loadRecords();
-  const html = makeReportHTML(records);
+  const html = makeReportHTML(records, {title:'Raport pomiarów ciśnienia'});
   const w = window.open('', '_blank');
   if(!w){ alert('Zablokowane okno. Zezwól na pop-upy, aby otworzyć raport.'); return; }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  w.document.open(); w.document.write(html); w.document.close();
+}
+function openDoctorReport(){
+  const all = sortByTsAsc(loadRecords());
+
+  const from = new Date();
+  from.setHours(0,0,0,0);
+  from.setDate(from.getDate() - (90 - 1));
+
+  const last90 = all.filter(r => new Date(r.ts) >= from);
+  const last90Valid = last90.filter(r => r.valid);
+
+  const pick = last90Valid.length ? last90Valid : last90;
+
+  const extraInfo = ` • Zakres: ostatnie 90 dni • Poprawne: ${last90Valid.length}/${last90.length}`;
+  const html = makeReportHTML(pick, {title:'Raport dla lekarza (ostatnie 90 dni)', extraInfo});
+
+  const w = window.open('', '_blank');
+  if(!w){ alert('Zablokowane okno. Zezwól na pop-upy, aby otworzyć raport.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 /* ===== ZDARZENIA ===== */
+function validateLogic(sys, dia){
+  if(sys !== null && dia !== null && dia >= sys){
+    return 'Rozkurczowe (DIA) nie powinno być większe/równe skurczowemu (SYS). Sprawdź wpis.';
+  }
+  return null;
+}
+function needsConfirmUnusual(sys, dia, pulse){
+  const flags = [];
+  if(sys !== null && (sys < 80 || sys > 220)) flags.push(`SYS=${sys}`);
+  if(dia !== null && (dia < 50 || dia > 140)) flags.push(`DIA=${dia}`);
+  if(pulse !== null && (pulse < 35 || pulse > 180)) flags.push(`Tętno=${pulse}`);
+  return flags;
+}
+
 form.addEventListener('submit', (e)=>{
   e.preventDefault();
 
@@ -928,19 +1091,48 @@ form.addEventListener('submit', (e)=>{
   const pos = safeStr(posEl.value);
   const rested = !!restedEl.checked;
   const meds = !!medsEl.checked;
+  const valid = !!validEl.checked;
+  const mtype = (mtypeEl.value === 'gabinetowy') ? 'gabinetowy' : 'domowy';
 
   if(!ts || sys === null || dia === null){
     alert('Uzupełnij poprawnie datę oraz wartości SYS/DIA.');
     return;
   }
 
-  const rec = { id: uid(), ts, sys, dia, pulse, note, pos, rested, meds };
+  const logicErr = validateLogic(sys, dia);
+  if(logicErr){ alert(logicErr); return; }
+
+  const flags = needsConfirmUnusual(sys, dia, pulse);
+  if(flags.length){
+    const ok = confirm(`Nietypowe wartości (${flags.join(', ')}). Zapisać mimo to?`);
+    if(!ok) return;
+  }
+
+  const rec = { id: uid(), ts, sys, dia, pulse, note, pos, rested, meds, valid, mtype };
   upsertRecord(rec);
   clearForm();
   renderList();
 });
 
 clearBtn.addEventListener('click', ()=> clearForm());
+
+copyLastBtn.addEventListener('click', ()=>{
+  const all = sortByTsAsc(loadRecords());
+  const last = all.length ? all[all.length - 1] : null;
+  if(!last){ alert('Brak pomiarów do skopiowania.'); return; }
+
+  mtypeEl.value = last.mtype || 'domowy';
+  posEl.value = last.pos || '';
+  restedEl.checked = !!last.rested;
+  medsEl.checked = !!last.meds;
+  validEl.checked = (last.valid === undefined) ? true : !!last.valid;
+  noteEl.value = last.note || '';
+
+  sysEl.value = '';
+  diaEl.value = '';
+  pulseEl.value = '';
+  tsEl.value = nowLocalISO();
+});
 
 listWrap.addEventListener('click', (e)=>{
   const btn = e.target.closest('button');
@@ -971,22 +1163,25 @@ resetAllBtn.addEventListener('click', ()=>{
 
 rangeSel.addEventListener('change', renderList);
 sortSel.addEventListener('change', renderList);
+onlyValidSel.addEventListener('change', renderList);
 searchNote.addEventListener('input', ()=>{ renderList(); });
 
 exportCsvBtn.addEventListener('click', ()=>{
   const arr = sortByTsAsc(loadRecords());
-  const header = ['ts','sys','dia','pulse','note','pos','rested','meds'];
+  const header = ['ts','mtype','sys','dia','pulse','valid','pos','rested','meds','note'];
   const lines = [header.join(',')];
   arr.forEach(r=>{
     lines.push([
       csvEscape(r.ts),
+      csvEscape(r.mtype || 'domowy'),
       csvEscape(r.sys),
       csvEscape(r.dia),
       csvEscape(r.pulse ?? ''),
-      csvEscape(r.note ?? ''),
+      csvEscape(r.valid ? '1' : '0'),
       csvEscape(r.pos ?? ''),
       csvEscape(r.rested ? '1' : '0'),
-      csvEscape(r.meds ? '1' : '0')
+      csvEscape(r.meds ? '1' : '0'),
+      csvEscape(r.note ?? '')
     ].join(','));
   });
   const stamp = new Date().toISOString().slice(0,10);
@@ -1015,16 +1210,19 @@ importCsvInput.addEventListener('change', async ()=>{
   const iTs = idx('ts');
   const iSys = idx('sys');
   const iDia = idx('dia');
+
+  if(iTs < 0 || iSys < 0 || iDia < 0){
+    alert('CSV musi mieć kolumny: ts, sys, dia (opcjonalnie: mtype, pulse, valid, note, pos, rested, meds).');
+    return;
+  }
+
+  const iMtype = idx('mtype');
   const iPulse = idx('pulse');
+  const iValid = idx('valid');
   const iNote = idx('note');
   const iPos = idx('pos');
   const iRested = idx('rested');
   const iMeds = idx('meds');
-
-  if(iTs < 0 || iSys < 0 || iDia < 0){
-    alert('CSV musi mieć kolumny: ts, sys, dia (opcjonalnie: pulse, note, pos, rested, meds).');
-    return;
-  }
 
   const imported = [];
   for(let r=1;r<rows.length;r++){
@@ -1032,28 +1230,41 @@ importCsvInput.addEventListener('change', async ()=>{
     const tsRaw = safeStr(line[iTs]).trim();
     const sysRaw = safeStr(line[iSys]).trim();
     const diaRaw = safeStr(line[iDia]).trim();
-    const pulseRaw = iPulse>=0 ? safeStr(line[iPulse]).trim() : '';
-    const noteRaw = iNote>=0 ? safeStr(line[iNote]).trim() : '';
-    const posRaw = iPos>=0 ? safeStr(line[iPos]).trim() : '';
-    const restedRaw = iRested>=0 ? safeStr(line[iRested]).trim() : '';
-    const medsRaw = iMeds>=0 ? safeStr(line[iMeds]).trim() : '';
 
     const tsDate = new Date(tsRaw);
     if(!tsRaw || isNaN(tsDate.getTime())) continue;
 
     const sys = clampNum(sysRaw, 40, 300);
     const dia = clampNum(diaRaw, 30, 200);
-    const pulse = pulseRaw ? clampNum(pulseRaw, 20, 220) : null;
     if(sys===null || dia===null) continue;
+
+    const logicErr = validateLogic(sys, dia);
+    if(logicErr) continue;
+
+    const pulseRaw = (iPulse>=0) ? safeStr(line[iPulse]).trim() : '';
+    const pulse = pulseRaw ? clampNum(pulseRaw, 20, 220) : null;
+
+    const mtypeRaw = (iMtype>=0) ? safeStr(line[iMtype]).trim().toLowerCase() : 'domowy';
+    const mtype = (mtypeRaw === 'gabinetowy') ? 'gabinetowy' : 'domowy';
+
+    const validRaw = (iValid>=0) ? safeStr(line[iValid]).trim().toLowerCase() : '1';
+    const valid = (validRaw === '1' || validRaw === 'true' || validRaw === 'tak' || validRaw === 'yes');
+
+    const note = (iNote>=0) ? safeStr(line[iNote]).trim() : '';
+    const pos = (iPos>=0) ? safeStr(line[iPos]).trim() : '';
+    const restedRaw = (iRested>=0) ? safeStr(line[iRested]).trim().toLowerCase() : '0';
+    const medsRaw = (iMeds>=0) ? safeStr(line[iMeds]).trim().toLowerCase() : '0';
 
     imported.push({
       id: uid(),
       ts: tsDate.toISOString(),
+      mtype,
       sys, dia, pulse,
-      note: noteRaw,
-      pos: posRaw,
-      rested: restedRaw === '1' || restedRaw.toLowerCase()==='true' || restedRaw.toLowerCase()==='tak',
-      meds: medsRaw === '1' || medsRaw.toLowerCase()==='true' || medsRaw.toLowerCase()==='tak'
+      valid,
+      note,
+      pos,
+      rested: restedRaw === '1' || restedRaw === 'true' || restedRaw === 'tak' || restedRaw === 'yes',
+      meds: medsRaw === '1' || medsRaw === 'true' || medsRaw === 'tak' || medsRaw === 'yes'
     });
   }
 
@@ -1082,6 +1293,7 @@ importJsonInput.addEventListener('change', async ()=>{
 });
 
 printReportBtn.addEventListener('click', openReport);
+printDoctorBtn.addEventListener('click', openDoctorReport);
 
 /* ===== SW UPDATE UI ===== */
 function showToast(msg){
