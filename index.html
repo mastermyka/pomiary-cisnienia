@@ -41,6 +41,14 @@
     .row{flex-direction:column}
     header{gap:8px}
   }
+  /* iPhone: nie rób mikro-pól i nie powiększaj/nie zoomuj inputów */
+input, select, textarea { font-size:16px; }
+
+/* Na wąskich ekranach wymuś pełną szerokość także dla tych divów z inline width */
+@media (max-width:640px){
+  #measureForm .row > div { width:100% !important; }
+  #measureForm .row input { width:100%; }
+}
 </style>
 </head>
 <body>
