@@ -19,7 +19,7 @@
 <style>
   :root{
     --bg:#f7f8fb; --card:#fff; --accent:#0b6cf0; --muted:#6b7280;
-    --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --mid:#8b5cf6;
+    --ok:#10b981; --ok2:#22c55e; --warn:#f59e0b; --bad:#ef4444; --crisis:#b91c1c;
   }
   html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;background:var(--bg);color:#111}
   .wrap{max-width:980px;margin:18px auto;padding:14px}
@@ -46,11 +46,12 @@
   .chartwrap{margin-top:12px;padding:8px}
   canvas{width:100%;height:220px;border-radius:8px;background:linear-gradient(180deg,#fff, #fbfdff)}
   .actions{display:flex;gap:6px;flex-wrap:wrap}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:0.78rem;font-weight:700;border:1px solid #e6e9ef}
-  .pill.ok{color:var(--ok);border-color:#d1fae5;background:#ecfdf5}
-  .pill.warn{color:var(--warn);border-color:#fde68a;background:#fffbeb}
-  .pill.bad{color:var(--bad);border-color:#fecaca;background:#fef2f2}
-  .pill.mid{color:var(--mid);border-color:#ddd6fe;background:#f5f3ff}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:0.78rem;font-weight:800;border:1px solid #e6e9ef}
+  .pill.opt{color:var(--ok);border-color:#d1fae5;background:#ecfdf5}
+  .pill.norm{color:var(--ok2);border-color:#dcfce7;background:#f0fdf4}
+  .pill.hnorm{color:var(--warn);border-color:#fde68a;background:#fffbeb}
+  .pill.htn{color:var(--bad);border-color:#fecaca;background:#fef2f2}
+  .pill.crisis{color:var(--crisis);border-color:#fecaca;background:#fee2e2}
   .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
   .kpi .box{border:1px solid #eef2f7;border-radius:12px;padding:10px}
   .kpi .val{font-weight:800;font-size:1.05rem}
@@ -195,7 +196,7 @@
   <div class="card chartwrap">
     <strong>Wykres (ostatnie 30 pomiarów)</strong>
     <canvas id="chart"></canvas>
-    <div class="small" style="margin-top:6px">Linie: SYS (niebieski), DIA (zielony), PULSE (pomarańczowy – przerywana, jeśli jest).</div>
+    <div class="small" style="margin-top:6px">Status wg ESC/ESH (Europa): optymalne, prawidłowe, wysokie prawidłowe, nadciśnienie (+ alert ≥180/120).</div>
   </div>
 
   <footer style="margin-top:12px;text-align:center" class="small card">
@@ -352,7 +353,6 @@ const d_meds = document.getElementById('d_meds');
 tsEl.value = nowLocalISO();
 
 let currentEditId = null;
-let swRegistration = null;
 let updateWaitingWorker = null;
 
 function loadRecords(){
@@ -410,19 +410,23 @@ function clearForm(){
   medsEl.checked = false;
 }
 
+/* ===== KLASYFIKACJA ESC/ESH (Europa) =====
+   Pomiar gabinetowy:
+   - Optymalne: <120 i <80
+   - Prawidłowe: 120–129 i/lub 80–84
+   - Wysokie prawidłowe: 130–139 i/lub 85–89
+   - Nadciśnienie: ≥140 i/lub ≥90
+   + Alert kryzysowy UI: ≥180 i/lub ≥120
+*/
 function classifyBP(sys, dia){
-  // prosta klasyfikacja (z grubsza jak US/AHA) — do celów orientacyjnych w UI
-  // Normal: <120 i <80
-  // Elevated: 120-129 i <80
-  // High 1: 130-139 lub 80-89
-  // High 2: >=140 lub >=90
-  // Crisis: >=180 lub >=120
-  if(sys >= 180 || dia >= 120) return {key:'crisis', label:'B. wysokie', cls:'bad'};
-  if(sys >= 140 || dia >= 90) return {key:'h2', label:'Wysokie', cls:'bad'};
-  if((sys >= 130 && sys <= 139) || (dia >= 80 && dia <= 89)) return {key:'h1', label:'Podwyższone', cls:'mid'};
-  if(sys >= 120 && sys <= 129 && dia < 80) return {key:'elev', label:'Nieznacznie ↑', cls:'warn'};
-  if(sys < 120 && dia < 80) return {key:'norm', label:'OK', cls:'ok'};
-  return {key:'unk', label:'—', cls:'pill'};
+  if(sys >= 180 || dia >= 120) return {key:'crisis', label:'B. wysokie', cls:'crisis'};
+  if(sys >= 140 || dia >= 90) return {key:'htn', label:'Nadciśnienie', cls:'htn'};
+  if((sys >= 130 && sys <= 139) || (dia >= 85 && dia <= 89)) return {key:'hnorm', label:'Wysokie prawidłowe', cls:'hnorm'};
+  if((sys >= 120 && sys <= 129) || (dia >= 80 && dia <= 84)) return {key:'norm', label:'Prawidłowe', cls:'norm'};
+  if(sys < 120 && dia < 80) return {key:'opt', label:'Optymalne', cls:'opt'};
+  // przypadki mieszane (np. SYS <120 ale DIA 80-84) wpadną wyżej dzięki warunkom OR;
+  // tu zostaje tylko "inne" (rzadkie) – traktuj jak prawidłowe.
+  return {key:'norm', label:'Prawidłowe', cls:'norm'};
 }
 
 function posLabel(v){
@@ -1103,8 +1107,6 @@ renderList();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').then((reg)=>{
-    swRegistration = reg;
-
     function listenForWaitingWorker(r){
       if(!r) return;
       if(r.waiting){
@@ -1122,15 +1124,8 @@ if('serviceWorker' in navigator){
         });
       });
     }
-
     listenForWaitingWorker(reg);
   }).catch(()=>{});
-
-  navigator.serviceWorker.addEventListener('message', (event)=>{
-    if(event?.data?.type === 'SW_UPDATED'){
-      showToast('Nowa wersja aplikacji jest dostępna.');
-    }
-  });
 }
 </script>
 </body>
