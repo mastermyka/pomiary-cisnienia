@@ -117,6 +117,12 @@
 </style>
 </head>
 <body>
+<div id="topbar" style="position:sticky;top:0;background:#fff;padding:10px 0 14px 0;border-bottom:1px solid #eee;margin-bottom:14px;z-index:10">
+  <button id="backBtn" style="background:#0b6cf0;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer">
+    ← Wróć do aplikacji
+  </button>
+  <span style="margin-left:10px;color:#6b7280;font-size:12px">Po wydruku wrócę automatycznie.</span>
+</div>
 
 <div class="wrap">
   <header>
@@ -842,7 +848,26 @@ function openPrintWindow(title, records){
         <tbody>${rows}</tbody>
       </table>
 
-           <script>window.print();<\/script>
+           <script>
+  (function(){
+    function goBack(){
+      // jeśli to faktycznie nowe okno/popup
+      if (window.opener) { window.close(); return; }
+      // jeśli to ta sama karta (iOS PWA tak robi)
+      if (history.length > 1) { history.back(); return; }
+      // awaryjnie: wróć na start
+      location.href = './';
+    }
+
+    document.getElementById('backBtn')?.addEventListener('click', goBack);
+
+    // iOS często odpala print lepiej po małym opóźnieniu
+    setTimeout(()=>{ window.print(); }, 200);
+
+    // po zamknięciu okna drukowania: automatyczny powrót
+    window.addEventListener('afterprint', ()=> setTimeout(goBack, 300));
+  })();
+<\/script>
     </body></html>`;
 
   const w = window.open('', '_blank');
