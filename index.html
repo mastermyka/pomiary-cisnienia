@@ -387,6 +387,10 @@ function normText(s){ return safeStr(s).trim().toLowerCase(); }
 
 const form = document.getElementById('measureForm');
 const tsEl = document.getElementById('ts');
+  console.log("INIT", { form, tsEl });
+if (!form || !tsEl) {
+  alert("Brak form/tsEl — DOM nie gotowy albo zły selektor");
+}
 const sysEl = document.getElementById('sys');
 const diaEl = document.getElementById('dia');
 const pulseEl = document.getElementById('pulse');
@@ -399,6 +403,9 @@ const mtypeEl = document.getElementById('mtype');
 
 const clearBtn = document.getElementById('clearBtn');
 tsEl.value = nowLocalISO();
+console.log("SET TS =>", tsEl.value);
+alert("TS po ustawieniu: " + tsEl.value);
+
 
   form.addEventListener('submit', (e) => {
   console.log("SUBMIT");
