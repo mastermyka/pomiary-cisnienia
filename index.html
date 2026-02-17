@@ -270,7 +270,7 @@
   <div class="card chartwrap">
     <strong>Wykres (ostatnie 30 pomiarów)</strong>
     <canvas id="chart"></canvas>
-    <div class="small" style="margin-top:6px">Status wg ESC/ESH (Europa): optymalne, prawidłowe, wysokie prawidłowe, nadciśnienie (+ alert ≥180/120). Linie referencyjne: SYS 140, DIA 90.</div>
+    <div class="small" style="margin-top:6px">Status wg ESC/ESH (Europa): optymalne, prawidłowe, wysokie prawidłowe, nadciśnienie (+ alert ≥180/120). Linie referencyjne: SYS 140, DIA 90. Oś po prawej: tętno (bpm).</div>
   </div>
 
   <footer style="margin-top:12px;text-align:center" class="small card">
@@ -413,6 +413,22 @@ function downloadFile(filename, text, mime){
   setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+/* ====== STATS HELPERS ====== */
+function avg(arr){
+  const xs = arr.filter(v=>Number.isFinite(v));
+  return xs.length ? Math.round(xs.reduce((s,x)=>s+x,0)/xs.length) : null;
+}
+function median(arr){
+  const xs = arr.filter(v=>Number.isFinite(v)).slice().sort((a,b)=>a-b);
+  if(!xs.length) return null;
+  const mid = Math.floor(xs.length/2);
+  return xs.length % 2 ? xs[mid] : Math.round((xs[mid-1]+xs[mid])/2);
+}
+function escapeHtml(s){
+  return safeStr(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ====== CHART (2 axes: BP left, PULSE right) ====== */
 function drawChart(records){
   const canvas = document.getElementById('chart');
   if(!canvas) return;
@@ -432,7 +448,8 @@ function drawChart(records){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,cssW,cssH);
 
-  const padL=38, padR=10, padT=14, padB=22;
+  // więcej miejsca po prawej na oś PULSE
+  const padL=38, padR=46, padT=16, padB=22;
   const W = cssW - padL - padR;
   const H = cssH - padT - padB;
 
@@ -443,14 +460,26 @@ function drawChart(records){
     return;
   }
 
-  const allY = pts.flatMap(p => [p.sys, p.dia]);
-  const minY = Math.max(30, Math.min(...allY) - 10);
-  const maxY = Math.min(260, Math.max(...allY) + 10);
+  // oś lewa (mmHg)
+  const allBP = pts.flatMap(p => [p.sys, p.dia]);
+  const minY = Math.max(30, Math.min(...allBP) - 10);
+  const maxY = Math.min(260, Math.max(...allBP) + 10);
 
   const xAt = i => padL + (pts.length <= 1 ? 0 : (i/(pts.length-1))*W);
-  const yAt = v => padT + (1 - (v - minY) / (maxY - minY)) * H;
+  const yBP = v => padT + (1 - (v - minY) / (maxY - minY)) * H;
 
-  // grid + labels
+  // oś prawa (bpm)
+  const pulseNums = pts.map(p => (typeof p.pulse === 'number' ? p.pulse : null)).filter(v => typeof v === 'number');
+  const hasPulse = pulseNums.length >= 1;
+  const pMin0 = hasPulse ? Math.min(...pulseNums) : 50;
+  const pMax0 = hasPulse ? Math.max(...pulseNums) : 120;
+
+  const pMin = Math.max(20, Math.floor((pMin0 - 5) / 5) * 5);
+  const pMax = Math.min(220, Math.ceil((pMax0 + 5) / 5) * 5);
+  const pRange = (pMax - pMin) || 1;
+  const yP = v => padT + (1 - (v - pMin) / pRange) * H;
+
+  // grid + labels (lewa oś)
   ctx.lineWidth = 1;
   ctx.strokeStyle = 'rgba(17,24,39,.10)';
   ctx.fillStyle = 'rgba(17,24,39,.55)';
@@ -459,7 +488,7 @@ function drawChart(records){
   const ticks = 4;
   for(let t=0;t<=ticks;t++){
     const v = minY + (t/ticks)*(maxY-minY);
-    const y = yAt(v);
+    const y = yBP(v);
     ctx.beginPath();
     ctx.moveTo(padL, y);
     ctx.lineTo(padL+W, y);
@@ -467,10 +496,21 @@ function drawChart(records){
     ctx.fillText(String(Math.round(v)), 6, y+4);
   }
 
-  // ref lines 140/90
-  function refLine(val, label){
+  // prawa oś (pulse)
+  if(hasPulse){
+    ctx.fillStyle = 'rgba(245,158,11,.85)';
+    for(let t=0;t<=ticks;t++){
+      const v = pMin + (t/ticks)*(pMax-pMin);
+      const y = yP(v);
+      ctx.fillText(String(Math.round(v)), padL+W+10, y+4);
+    }
+    ctx.fillStyle = 'rgba(17,24,39,.55)';
+  }
+
+  // ref lines BP 140/90
+  function refLineBP(val, label){
     if(val < minY || val > maxY) return;
-    const y = yAt(val);
+    const y = yBP(val);
     ctx.setLineDash([5,4]);
     ctx.strokeStyle = 'rgba(11,108,240,.35)';
     ctx.beginPath();
@@ -483,88 +523,51 @@ function drawChart(records){
     ctx.fillStyle = 'rgba(17,24,39,.55)';
     ctx.strokeStyle = 'rgba(17,24,39,.10)';
   }
-  refLine(140, 'SYS 140');
-  refLine(90,  'DIA 90');
+  refLineBP(140, 'SYS 140');
+  refLineBP(90,  'DIA 90');
 
-  function plotLine(values, stroke){
+  function plotLine(values, yFn, stroke){
     ctx.lineWidth = 2;
     ctx.strokeStyle = stroke;
     ctx.beginPath();
-    values.forEach((v,i)=>{
-      const x = xAt(i);
-      const y = yAt(v);
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    });
-    ctx.stroke();
-
-    ctx.fillStyle = stroke;
-    values.forEach((v,i)=>{
-      const x = xAt(i), y = yAt(v);
-      ctx.beginPath();
-      ctx.arc(x,y,3,0,Math.PI*2);
-      ctx.fill();
-    });
-  }
-
-    // sys and dia
-  plotLine(pts.map(p=>p.sys), 'rgba(239,68,68,.85)');   // SYS
-  plotLine(pts.map(p=>p.dia), 'rgba(11,108,240,.85)');  // DIA
-
-  // PULSE (skalowane do zakresu wykresu, żeby było czytelne)
-  const pulseVals = pts.map(p => (typeof p.pulse === 'number' ? p.pulse : null));
-  const pulseNums = pulseVals.filter(v => typeof v === 'number');
-
-  if(pulseNums.length >= 2){
-    const pMin = Math.min(...pulseNums);
-    const pMax = Math.max(...pulseNums);
-    // unikamy dzielenia przez 0 gdy tętno stałe
-    const pRange = (pMax - pMin) || 1;
-
-    // mapujemy pulse na zakres minY..maxY
-    const pulseScaled = pulseVals.map(v=>{
-      if(typeof v !== 'number') return null;
-      return minY + ((v - pMin) / pRange) * (maxY - minY);
-    });
-
-    // plotLine nie obsługuje nulli, więc rysujemy odcinki ręcznie
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(245,158,11,.90)'; // warn-ish
-    ctx.beginPath();
     let started = false;
-    pulseScaled.forEach((v,i)=>{
-      if(v === null) { started = false; return; }
+    values.forEach((v,i)=>{
+      if(v === null || !Number.isFinite(v)) { started = false; return; }
       const x = xAt(i);
-      const y = yAt(v);
+      const y = yFn(v);
       if(!started){ ctx.moveTo(x,y); started = true; }
       else ctx.lineTo(x,y);
     });
     ctx.stroke();
 
-    // punkty
-    ctx.fillStyle = 'rgba(245,158,11,.90)';
-    pulseScaled.forEach((v,i)=>{
-      if(v === null) return;
-      const x = xAt(i);
-      const y = yAt(v);
+    ctx.fillStyle = stroke;
+    values.forEach((v,i)=>{
+      if(v === null || !Number.isFinite(v)) return;
+      const x = xAt(i), y = yFn(v);
       ctx.beginPath();
       ctx.arc(x,y,3,0,Math.PI*2);
       ctx.fill();
     });
-
-    // opis skali pulse po prawej (min/max)
-    ctx.fillStyle = 'rgba(245,158,11,.90)';
-    ctx.font = '12px system-ui';
-    ctx.fillText(`PULSE (skala) ${Math.round(pMin)}–${Math.round(pMax)}`, padL+90, padT-2);
   }
 
-  // legend
-  ctx.fillStyle = 'rgba(239,68,68,.85)';
-  ctx.fillText('SYS', padL, padT-2);
-  ctx.fillStyle = 'rgba(11,108,240,.85)';
-  ctx.fillText('DIA', padL+44, padT-2);
-  ctx.fillStyle = 'rgba(245,158,11,.90)';
-  ctx.fillText('PULSE', padL+90, padT-2);
+  // SYS / DIA
+  plotLine(pts.map(p=>p.sys), yBP, 'rgba(239,68,68,.85)');
+  plotLine(pts.map(p=>p.dia), yBP, 'rgba(11,108,240,.85)');
+
+  // PULSE (bpm) – osobna oś prawa
+  if(hasPulse){
+    plotLine(pts.map(p => (typeof p.pulse === 'number' ? p.pulse : null)), yP, 'rgba(245,158,11,.90)');
+  }
+
+  // legenda
+  ctx.font = '12px system-ui';
+  ctx.fillStyle = 'rgba(239,68,68,.85)';   ctx.fillText('SYS', padL, padT-4);
+  ctx.fillStyle = 'rgba(11,108,240,.85)';  ctx.fillText('DIA', padL+44, padT-4);
+  if(hasPulse){
+    ctx.fillStyle = 'rgba(245,158,11,.90)'; ctx.fillText('PULSE (bpm)', padL+90, padT-4);
+  }
 }
+
 function buildKPI(records){
   const kpiEl = document.getElementById('kpi');
   if(!kpiEl) return;
@@ -573,7 +576,6 @@ function buildKPI(records){
   const validCount = records.filter(r=>r.valid).length;
   const last = records.slice().sort((a,b)=> (b.ts||'').localeCompare(a.ts||''))[0];
 
-  const avg = (arr)=> arr.length ? Math.round(arr.reduce((s,x)=>s+x,0)/arr.length) : '—';
   const sysArr = records.filter(r=>typeof r.sys==='number').map(r=>r.sys);
   const diaArr = records.filter(r=>typeof r.dia==='number').map(r=>r.dia);
   const pulseArr = records.filter(r=>typeof r.pulse==='number').map(r=>r.pulse);
@@ -586,11 +588,11 @@ function buildKPI(records){
       <div class="lbl">Ostatni pomiar</div>
     </div>
     <div class="box">
-      <div class="val">${avg(sysArr)}/${avg(diaArr)}</div>
+      <div class="val">${avg(sysArr) ?? '—'}/${avg(diaArr) ?? '—'}</div>
       <div class="lbl">Średnia (SYS/DIA)</div>
     </div>
     <div class="box">
-      <div class="val">${avg(pulseArr)}</div>
+      <div class="val">${avg(pulseArr) ?? '—'}</div>
       <div class="lbl">Średnie tętno</div>
     </div>
     <div class="box">
@@ -618,7 +620,6 @@ function applyFilters(records){
   const f = getFilters();
   let out = records.slice();
 
-  // range
   if(f.range !== 'all'){
     const days = Number(f.range);
     if(Number.isFinite(days) && days > 0){
@@ -631,12 +632,10 @@ function applyFilters(records){
     }
   }
 
-  // only valid
   if(f.onlyValid === 'yes'){
     out = out.filter(r=>r.valid);
   }
 
-  // search in note + context
   if(f.search){
     out = out.filter(r=>{
       const hay = [
@@ -649,7 +648,6 @@ function applyFilters(records){
     });
   }
 
-  // sort
   out.sort((a,b)=>{
     const aa = a.ts || '';
     const bb = b.ts || '';
@@ -741,13 +739,178 @@ function render(){
     </table>
   `;
 
-  // bind edit buttons
   listWrap.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       openEdit(btn.getAttribute('data-edit'));
     });
   });
 }
+
+function openPrintWindow(title, records){
+  const sysArr = records.map(r=>r.sys).filter(n=>Number.isFinite(n));
+  const diaArr = records.map(r=>r.dia).filter(n=>Number.isFinite(n));
+  const pulseArr = records.map(r=>r.pulse).filter(n=>Number.isFinite(n));
+
+  const avgSys = avg(sysArr), avgDia = avg(diaArr), avgPulse = avg(pulseArr);
+  const medSys = median(sysArr), medDia = median(diaArr), medPulse = median(pulseArr);
+
+  const maxSys = sysArr.length ? Math.max(...sysArr) : null;
+  const maxDia = diaArr.length ? Math.max(...diaArr) : null;
+  const maxPulse = pulseArr.length ? Math.max(...pulseArr) : null;
+
+  const validCount = records.filter(r=>r.valid).length;
+
+  // klasy ESC/ESH
+  const buckets = { opt:0, norm:0, hnorm:0, htn:0, crisis:0 };
+  records.forEach(r=>{
+    const s = bpStatus(r.sys, r.dia);
+    buckets[s.key] = (buckets[s.key] || 0) + 1;
+  });
+
+  const total = records.length || 1;
+  const pct = (n)=> Math.round((n/total)*100);
+
+  const htnTotal = (buckets.htn||0) + (buckets.crisis||0);
+
+  // rano / wieczór (prosto i czytelnie):
+  // rano = 04:00–11:59, wieczór = 18:00–23:59, reszta = "inne"
+  function timeBucket(ts){
+    const d = new Date(ts);
+    const h = d.getHours();
+    if(h >= 4 && h <= 11) return 'rano';
+    if(h >= 18 && h <= 23) return 'wieczor';
+    return 'inne';
+  }
+
+  const morning = records.filter(r=>timeBucket(r.ts)==='rano');
+  const evening = records.filter(r=>timeBucket(r.ts)==='wieczor');
+
+  const mSys = morning.map(r=>r.sys).filter(Number.isFinite);
+  const mDia = morning.map(r=>r.dia).filter(Number.isFinite);
+  const mPul = morning.map(r=>r.pulse).filter(Number.isFinite);
+
+  const eSys = evening.map(r=>r.sys).filter(Number.isFinite);
+  const eDia = evening.map(r=>r.dia).filter(Number.isFinite);
+  const ePul = evening.map(r=>r.pulse).filter(Number.isFinite);
+
+  const rows = records
+    .slice()
+    .sort((a,b)=> (a.ts||'').localeCompare(b.ts||''))
+    .map(r=>{
+      const st = bpStatus(r.sys, r.dia);
+      const note = escapeHtml(r.note);
+      const validMark = r.valid ? '' : ' style="opacity:.55"';
+      const tb = timeBucket(r.ts);
+      const tbTxt = tb === 'rano' ? 'Rano' : tb === 'wieczor' ? 'Wieczór' : '—';
+      return `
+        <tr>
+          <td>${fmtDT(r.ts)}<div class="muted" style="font-size:11px;margin-top:2px">${tbTxt}</div></td>
+          <td><b>${r.sys}</b> / <b>${r.dia}</b></td>
+          <td>${Number.isFinite(r.pulse) ? r.pulse : ''}</td>
+          <td><span class="pill ${st.key}"${validMark}>${st.label}</span></td>
+          <td>${note ? note : '<span class="muted">—</span>'}</td>
+        </tr>
+      `;
+    }).join('');
+
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
+      h1{margin:0 0 6px 0;font-size:20px}
+      .sub{color:#555;margin:0 0 14px 0}
+      .kpi{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 16px 0}
+      .box{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;min-width:220px}
+      .val{font-weight:800;font-size:16px;line-height:1.25}
+      .lbl{color:#666;font-size:12px;margin-top:6px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border-bottom:1px solid #eee;padding:8px;vertical-align:top;text-align:left}
+      th{background:#fafafa}
+      .muted{color:#6b7280}
+      .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid #e6e9ef}
+      .pill.opt{color:#10b981;border-color:#d1fae5;background:#ecfdf5}
+      .pill.norm{color:#22c55e;border-color:#dcfce7;background:#f0fdf4}
+      .pill.hnorm{color:#f59e0b;border-color:#fde68a;background:#fffbeb}
+      .pill.htn{color:#ef4444;border-color:#fecaca;background:#fef2f2}
+      .pill.crisis{color:#b91c1c;border-color:#fecaca;background:#fee2e2}
+      .mini{font-size:12px;color:#444;margin-top:6px}
+      .kv{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+      .kv span{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #eee;background:#fff;font-size:12px;color:#333}
+      @media print{
+        body{margin:0}
+        .box{break-inside:avoid}
+        tr{break-inside:avoid}
+      }
+    </style></head><body>
+      <h1>${escapeHtml(title)}</h1>
+      <p class="sub">
+        Liczba pomiarów: ${records.length}
+        • Poprawne: ${validCount}
+        • Niepoprawne: ${records.length - validCount}
+      </p>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="val">${avgSys ?? '—'}/${avgDia ?? '—'}</div>
+          <div class="lbl">Średnia SYS/DIA (mmHg)</div>
+          <div class="mini">Mediana: <b>${medSys ?? '—'}/${medDia ?? '—'}</b></div>
+        </div>
+
+        <div class="box">
+          <div class="val">${avgPulse ?? '—'} bpm</div>
+          <div class="lbl">Średnie tętno</div>
+          <div class="mini">Mediana: <b>${medPulse ?? '—'}</b> bpm</div>
+        </div>
+
+        <div class="box">
+          <div class="val">${maxSys ?? '—'}/${maxDia ?? '—'}</div>
+          <div class="lbl">Maksymalne SYS/DIA</div>
+          <div class="mini">Max pulse: <b>${maxPulse ?? '—'}</b> bpm</div>
+        </div>
+
+        <div class="box">
+          <div class="val">
+            <span class="pill opt">Opt ${buckets.opt||0} (${pct(buckets.opt||0)}%)</span>
+            <span class="pill norm">Norm ${buckets.norm||0} (${pct(buckets.norm||0)}%)</span>
+            <span class="pill hnorm">Wys. ${buckets.hnorm||0} (${pct(buckets.hnorm||0)}%)</span>
+          </div>
+          <div class="kv">
+            <span>Nadciśnienie: <b>${htnTotal}</b> (${pct(htnTotal)}%)</span>
+            <span>ALERT: <b>${buckets.crisis||0}</b> (${pct(buckets.crisis||0)}%)</span>
+          </div>
+          <div class="lbl">Podział wg ESC/ESH</div>
+        </div>
+
+        <div class="box">
+          <div class="val">Rano: ${morning.length} • Wieczór: ${evening.length}</div>
+          <div class="lbl">Podział wg pory dnia</div>
+          <div class="mini">
+            Rano avg: <b>${avg(mSys) ?? '—'}/${avg(mDia) ?? '—'}</b> • pulse <b>${avg(mPul) ?? '—'}</b><br>
+            Wieczór avg: <b>${avg(eSys) ?? '—'}/${avg(eDia) ?? '—'}</b> • pulse <b>${avg(ePul) ?? '—'}</b>
+          </div>
+          <div class="mini">
+            Rano med: <b>${median(mSys) ?? '—'}/${median(mDia) ?? '—'}</b> • pulse <b>${median(mPul) ?? '—'}</b><br>
+            Wieczór med: <b>${median(eSys) ?? '—'}/${median(eDia) ?? '—'}</b> • pulse <b>${median(ePul) ?? '—'}</b>
+          </div>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th>Data</th><th>Ciśnienie</th><th>Tętno</th><th>Status</th><th>Notatka</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <script>window.print();</script>
+    </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 
 /* ====== FORM (ADD) ====== */
 const form = document.getElementById('measureForm');
@@ -894,7 +1057,6 @@ dlgCancel.addEventListener('click', closeEdit);
 dlgSave.addEventListener('click', ()=>{
   if(!editingId) return;
 
-  // walidacja minimalna
   if(d_ts.value === '' || d_sys.value === '' || d_dia.value === ''){
     alert('Uzupełnij datę, SYS i DIA.');
     return;
@@ -993,7 +1155,6 @@ document.getElementById('importCsv').addEventListener('change', async (e)=>{
   if(!file) return;
   const txt = await file.text();
 
-  // prosty parser csv (bez egzotycznych edge-case)
   const lines = txt.split(/\r?\n/).filter(Boolean);
   if(lines.length < 2){ alert('CSV pusty'); return; }
 
@@ -1040,11 +1201,34 @@ document.getElementById('importCsv').addEventListener('change', async (e)=>{
   e.target.value = '';
 });
 
-/* ====== PRINT ====== */
-document.getElementById('printReport').addEventListener('click', ()=>window.print());
+/* ====== PRINT BUTTONS (new clean reports) ====== */
+document.getElementById('printReport').addEventListener('click', ()=>{
+  const all = loadRecords();
+  const filtered = applyFilters(all);
+  openPrintWindow('Raport pomiarów (wg filtrów)', filtered);
+});
+
 document.getElementById('printDoctor').addEventListener('click', ()=>{
-  // na teraz robi print z filtrami; docFrom/docTo możesz dopiąć później do applyFilters
-  window.print();
+  const from = document.getElementById('docFrom').value;
+  const to = document.getElementById('docTo').value;
+  const only = document.getElementById('docOnlyValid').value; // yes/all
+
+  let recs = loadRecords();
+
+  if(from){
+    const d0 = new Date(from + 'T00:00');
+    recs = recs.filter(r=> new Date(r.ts) >= d0);
+  }
+  if(to){
+    const d1 = new Date(to + 'T23:59');
+    recs = recs.filter(r=> new Date(r.ts) <= d1);
+  }
+  if(only === 'yes'){
+    recs = recs.filter(r=>r.valid);
+  }
+
+  const title = `Raport dla lekarza: ${from||'—'} → ${to||'—'} (${only==='yes'?'tylko poprawne':'wszystkie'})`;
+  openPrintWindow(title, recs);
 });
 
 /* ====== INIT ====== */
