@@ -370,27 +370,10 @@ function nowLocalISO(){
 function uid(){
   return 'id_' + Math.random().toString(16).slice(2) + '_' + Date.now().toString(16);
 }
-function toLocalInputValue(dateOrString){
-  const d = (dateOrString instanceof Date) ? dateOrString : new Date(dateOrString);
-  const pad = n=>n.toString().padStart(2,'0');
-  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
-}
-function clampNum(v, min, max){
-  const n = Number(v);
-  if(!Number.isFinite(n)) return null;
-  if(n < min) return null;
-  if(n > max) return null;
-  return n;
-}
 function safeStr(x){ return (x ?? '').toString(); }
-function normText(s){ return safeStr(s).trim().toLowerCase(); }
 
 const form = document.getElementById('measureForm');
 const tsEl = document.getElementById('ts');
-  console.log("INIT", { form, tsEl });
-if (!form || !tsEl) {
-  alert("Brak form/tsEl — DOM nie gotowy albo zły selektor");
-}
 const sysEl = document.getElementById('sys');
 const diaEl = document.getElementById('dia');
 const pulseEl = document.getElementById('pulse');
@@ -401,21 +384,143 @@ const medsEl = document.getElementById('meds');
 const validEl = document.getElementById('valid');
 const mtypeEl = document.getElementById('mtype');
 
+const listWrap = document.getElementById('listWrap');
+const countInfo = document.getElementById('countInfo');
 const clearBtn = document.getElementById('clearBtn');
-tsEl.value = nowLocalISO();
-console.log("SET TS =>", tsEl.value);
-alert("TS po ustawieniu: " + tsEl.value);
+const resetAllBtn = document.getElementById('resetAll');
 
+function loadRecords(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){
+    console.error("LS parse error", e);
+    return [];
+  }
+}
+function saveRecords(arr){
+  localStorage.setItem(LS_KEY, JSON.stringify(arr));
+}
 
-  form.addEventListener('submit', (e) => {
-  console.log("SUBMIT");
-  console.log("checkValidity:", form.checkValidity());
-  if (!form.checkValidity()) {
-    e.preventDefault();
-    form.reportValidity();   // wymusi pokazanie komunikatu "uzupełnij to pole"
+function fmtDT(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleString('pl-PL', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  }catch{
+    return safeStr(iso);
+  }
+}
+
+function render(){
+  const recs = loadRecords().sort((a,b)=> (b.ts || '').localeCompare(a.ts || ''));
+  countInfo.textContent = `Liczba pomiarów: ${recs.length}`;
+
+  if(recs.length === 0){
+    listWrap.innerHTML = `<div class="small muted" style="padding:10px 2px">Brak zapisów.</div>`;
     return;
   }
-  e.preventDefault();
-  console.log("OK, będzie zapis");
-});
 
+  const rows = recs.map(r=>{
+    const note = safeStr(r.note);
+    const ctx = [
+      r.mtype ? `typ: ${r.mtype}` : '',
+      r.pos ? `poz: ${r.pos}` : '',
+      r.rested ? 'odpoczynek' : '',
+      r.meds ? 'leki' : '',
+      r.valid ? 'poprawny' : 'niepoprawny',
+    ].filter(Boolean).join(' • ');
+
+    return `
+      <tr>
+        <td>${fmtDT(r.ts)}</td>
+        <td><strong>${r.sys}</strong> / <strong>${r.dia}</strong></td>
+        <td>${r.pulse ?? ''}</td>
+        <td class="small">${ctx}${note ? `<div style="margin-top:4px">${note}</div>` : ''}</td>
+      </tr>
+    `;
+  }).join('');
+
+  listWrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Ciśnienie</th>
+          <th>Tętno</th>
+          <th>Kontekst / notatka</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function resetForm(){
+  tsEl.value = nowLocalISO();
+  sysEl.value = '';
+  diaEl.value = '';
+  pulseEl.value = '';
+  noteEl.value = '';
+  posEl.value = '';
+  restedEl.checked = false;
+  medsEl.checked = false;
+  validEl.checked = true;
+  mtypeEl.value = 'domowy';
+}
+
+if(!form || !tsEl){
+  alert("Nie znaleziono #measureForm albo #ts (sprawdź id w HTML).");
+} else {
+  // ustaw domyślną datę na start
+  tsEl.value = nowLocalISO();
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    // pokaż błędy required (jeśli są)
+    if(!form.checkValidity()){
+      form.reportValidity();
+      return;
+    }
+
+    const sys = Number(sysEl.value);
+    const dia = Number(diaEl.value);
+    const pulse = pulseEl.value === '' ? null : Number(pulseEl.value);
+
+    const rec = {
+      id: uid(),
+      ts: tsEl.value,
+      sys,
+      dia,
+      pulse,
+      note: safeStr(noteEl.value).trim(),
+      pos: posEl.value,
+      rested: !!restedEl.checked,
+      meds: !!medsEl.checked,
+      valid: !!validEl.checked,
+      mtype: mtypeEl.value,
+      createdAt: new Date().toISOString()
+    };
+
+    const recs = loadRecords();
+    recs.push(rec);
+    saveRecords(recs);
+
+    render();
+    resetForm();
+  });
+
+  clearBtn?.addEventListener('click', resetForm);
+
+  resetAllBtn?.addEventListener('click', () => {
+    if(confirm("Na pewno usunąć wszystkie pomiary?")){
+      localStorage.removeItem(LS_KEY);
+      render();
+      resetForm();
+    }
+  });
+
+  render();
+}
+</script>
