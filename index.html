@@ -506,16 +506,65 @@ function drawChart(records){
     });
   }
 
-  // sys and dia
+    // sys and dia
   plotLine(pts.map(p=>p.sys), 'rgba(239,68,68,.85)');   // SYS
   plotLine(pts.map(p=>p.dia), 'rgba(11,108,240,.85)');  // DIA
+
+  // PULSE (skalowane do zakresu wykresu, żeby było czytelne)
+  const pulseVals = pts.map(p => (typeof p.pulse === 'number' ? p.pulse : null));
+  const pulseNums = pulseVals.filter(v => typeof v === 'number');
+
+  if(pulseNums.length >= 2){
+    const pMin = Math.min(...pulseNums);
+    const pMax = Math.max(...pulseNums);
+    // unikamy dzielenia przez 0 gdy tętno stałe
+    const pRange = (pMax - pMin) || 1;
+
+    // mapujemy pulse na zakres minY..maxY
+    const pulseScaled = pulseVals.map(v=>{
+      if(typeof v !== 'number') return null;
+      return minY + ((v - pMin) / pRange) * (maxY - minY);
+    });
+
+    // plotLine nie obsługuje nulli, więc rysujemy odcinki ręcznie
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(245,158,11,.90)'; // warn-ish
+    ctx.beginPath();
+    let started = false;
+    pulseScaled.forEach((v,i)=>{
+      if(v === null) { started = false; return; }
+      const x = xAt(i);
+      const y = yAt(v);
+      if(!started){ ctx.moveTo(x,y); started = true; }
+      else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+
+    // punkty
+    ctx.fillStyle = 'rgba(245,158,11,.90)';
+    pulseScaled.forEach((v,i)=>{
+      if(v === null) return;
+      const x = xAt(i);
+      const y = yAt(v);
+      ctx.beginPath();
+      ctx.arc(x,y,3,0,Math.PI*2);
+      ctx.fill();
+    });
+
+    // opis skali pulse po prawej (min/max)
+    ctx.fillStyle = 'rgba(245,158,11,.90)';
+    ctx.font = '12px system-ui';
+    ctx.fillText(`PULSE (skala) ${Math.round(pMin)}–${Math.round(pMax)}`, padL+90, padT-2);
+  }
 
   // legend
   ctx.fillStyle = 'rgba(239,68,68,.85)';
   ctx.fillText('SYS', padL, padT-2);
   ctx.fillStyle = 'rgba(11,108,240,.85)';
   ctx.fillText('DIA', padL+44, padT-2);
-}
+  ctx.fillStyle = 'rgba(245,158,11,.90)';
+  ctx.fillText('PULSE', padL+90, padT-2);
+
 
 function buildKPI(records){
   const kpiEl = document.getElementById('kpi');
