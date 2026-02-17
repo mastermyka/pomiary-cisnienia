@@ -746,6 +746,7 @@ function render(){
   });
 }
 
+/* ====== CLEAN PRINT REPORTS ====== */
 function openPrintWindow(title, records){
   const sysArr = records.map(r=>r.sys).filter(n=>Number.isFinite(n));
   const diaArr = records.map(r=>r.dia).filter(n=>Number.isFinite(n));
@@ -754,44 +755,13 @@ function openPrintWindow(title, records){
   const avgSys = avg(sysArr), avgDia = avg(diaArr), avgPulse = avg(pulseArr);
   const medSys = median(sysArr), medDia = median(diaArr), medPulse = median(pulseArr);
 
-  const maxSys = sysArr.length ? Math.max(...sysArr) : null;
-  const maxDia = diaArr.length ? Math.max(...diaArr) : null;
-  const maxPulse = pulseArr.length ? Math.max(...pulseArr) : null;
-
   const validCount = records.filter(r=>r.valid).length;
 
-  // klasy ESC/ESH
   const buckets = { opt:0, norm:0, hnorm:0, htn:0, crisis:0 };
   records.forEach(r=>{
     const s = bpStatus(r.sys, r.dia);
     buckets[s.key] = (buckets[s.key] || 0) + 1;
   });
-
-  const total = records.length || 1;
-  const pct = (n)=> Math.round((n/total)*100);
-
-  const htnTotal = (buckets.htn||0) + (buckets.crisis||0);
-
-  // rano / wieczór (prosto i czytelnie):
-  // rano = 04:00–11:59, wieczór = 18:00–23:59, reszta = "inne"
-  function timeBucket(ts){
-    const d = new Date(ts);
-    const h = d.getHours();
-    if(h >= 4 && h <= 11) return 'rano';
-    if(h >= 18 && h <= 23) return 'wieczor';
-    return 'inne';
-  }
-
-  const morning = records.filter(r=>timeBucket(r.ts)==='rano');
-  const evening = records.filter(r=>timeBucket(r.ts)==='wieczor');
-
-  const mSys = morning.map(r=>r.sys).filter(Number.isFinite);
-  const mDia = morning.map(r=>r.dia).filter(Number.isFinite);
-  const mPul = morning.map(r=>r.pulse).filter(Number.isFinite);
-
-  const eSys = evening.map(r=>r.sys).filter(Number.isFinite);
-  const eDia = evening.map(r=>r.dia).filter(Number.isFinite);
-  const ePul = evening.map(r=>r.pulse).filter(Number.isFinite);
 
   const rows = records
     .slice()
@@ -800,11 +770,9 @@ function openPrintWindow(title, records){
       const st = bpStatus(r.sys, r.dia);
       const note = escapeHtml(r.note);
       const validMark = r.valid ? '' : ' style="opacity:.55"';
-      const tb = timeBucket(r.ts);
-      const tbTxt = tb === 'rano' ? 'Rano' : tb === 'wieczor' ? 'Wieczór' : '—';
       return `
         <tr>
-          <td>${fmtDT(r.ts)}<div class="muted" style="font-size:11px;margin-top:2px">${tbTxt}</div></td>
+          <td>${fmtDT(r.ts)}</td>
           <td><b>${r.sys}</b> / <b>${r.dia}</b></td>
           <td>${Number.isFinite(r.pulse) ? r.pulse : ''}</td>
           <td><span class="pill ${st.key}"${validMark}>${st.label}</span></td>
@@ -820,9 +788,9 @@ function openPrintWindow(title, records){
       h1{margin:0 0 6px 0;font-size:20px}
       .sub{color:#555;margin:0 0 14px 0}
       .kpi{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 16px 0}
-      .box{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;min-width:220px}
-      .val{font-weight:800;font-size:16px;line-height:1.25}
-      .lbl{color:#666;font-size:12px;margin-top:6px}
+      .box{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;min-width:210px}
+      .val{font-weight:800;font-size:16px}
+      .lbl{color:#666;font-size:12px;margin-top:4px}
       table{width:100%;border-collapse:collapse;font-size:13px}
       th,td{border-bottom:1px solid #eee;padding:8px;vertical-align:top;text-align:left}
       th{background:#fafafa}
@@ -833,9 +801,6 @@ function openPrintWindow(title, records){
       .pill.hnorm{color:#f59e0b;border-color:#fde68a;background:#fffbeb}
       .pill.htn{color:#ef4444;border-color:#fecaca;background:#fef2f2}
       .pill.crisis{color:#b91c1c;border-color:#fecaca;background:#fee2e2}
-      .mini{font-size:12px;color:#444;margin-top:6px}
-      .kv{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-      .kv span{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #eee;background:#fff;font-size:12px;color:#333}
       @media print{
         body{margin:0}
         .box{break-inside:avoid}
@@ -843,55 +808,30 @@ function openPrintWindow(title, records){
       }
     </style></head><body>
       <h1>${escapeHtml(title)}</h1>
-      <p class="sub">
-        Liczba pomiarów: ${records.length}
-        • Poprawne: ${validCount}
-        • Niepoprawne: ${records.length - validCount}
-      </p>
+      <p class="sub">Liczba pomiarów: ${records.length} • Poprawne: ${validCount} • Niepoprawne: ${records.length - validCount}</p>
 
       <div class="kpi">
         <div class="box">
           <div class="val">${avgSys ?? '—'}/${avgDia ?? '—'}</div>
           <div class="lbl">Średnia SYS/DIA (mmHg)</div>
-          <div class="mini">Mediana: <b>${medSys ?? '—'}/${medDia ?? '—'}</b></div>
         </div>
-
         <div class="box">
-          <div class="val">${avgPulse ?? '—'} bpm</div>
-          <div class="lbl">Średnie tętno</div>
-          <div class="mini">Mediana: <b>${medPulse ?? '—'}</b> bpm</div>
+          <div class="val">${medSys ?? '—'}/${medDia ?? '—'}</div>
+          <div class="lbl">Mediana SYS/DIA (mmHg)</div>
         </div>
-
         <div class="box">
-          <div class="val">${maxSys ?? '—'}/${maxDia ?? '—'}</div>
-          <div class="lbl">Maksymalne SYS/DIA</div>
-          <div class="mini">Max pulse: <b>${maxPulse ?? '—'}</b> bpm</div>
+          <div class="val">${avgPulse ?? '—'} / ${medPulse ?? '—'}</div>
+          <div class="lbl">Tętno: średnia / mediana (bpm)</div>
         </div>
-
         <div class="box">
           <div class="val">
-            <span class="pill opt">Opt ${buckets.opt||0} (${pct(buckets.opt||0)}%)</span>
-            <span class="pill norm">Norm ${buckets.norm||0} (${pct(buckets.norm||0)}%)</span>
-            <span class="pill hnorm">Wys. ${buckets.hnorm||0} (${pct(buckets.hnorm||0)}%)</span>
-          </div>
-          <div class="kv">
-            <span>Nadciśnienie: <b>${htnTotal}</b> (${pct(htnTotal)}%)</span>
-            <span>ALERT: <b>${buckets.crisis||0}</b> (${pct(buckets.crisis||0)}%)</span>
+            <span class="pill opt">Opt ${buckets.opt||0}</span>
+            <span class="pill norm">Norm ${buckets.norm||0}</span>
+            <span class="pill hnorm">Wys. ${buckets.hnorm||0}</span>
+            <span class="pill htn">HTN ${buckets.htn||0}</span>
+            <span class="pill crisis">ALERT ${buckets.crisis||0}</span>
           </div>
           <div class="lbl">Podział wg ESC/ESH</div>
-        </div>
-
-        <div class="box">
-          <div class="val">Rano: ${morning.length} • Wieczór: ${evening.length}</div>
-          <div class="lbl">Podział wg pory dnia</div>
-          <div class="mini">
-            Rano avg: <b>${avg(mSys) ?? '—'}/${avg(mDia) ?? '—'}</b> • pulse <b>${avg(mPul) ?? '—'}</b><br>
-            Wieczór avg: <b>${avg(eSys) ?? '—'}/${avg(eDia) ?? '—'}</b> • pulse <b>${avg(ePul) ?? '—'}</b>
-          </div>
-          <div class="mini">
-            Rano med: <b>${median(mSys) ?? '—'}/${median(mDia) ?? '—'}</b> • pulse <b>${median(mPul) ?? '—'}</b><br>
-            Wieczór med: <b>${median(eSys) ?? '—'}/${median(eDia) ?? '—'}</b> • pulse <b>${median(ePul) ?? '—'}</b>
-          </div>
         </div>
       </div>
 
@@ -910,7 +850,6 @@ function openPrintWindow(title, records){
   w.document.write(html);
   w.document.close();
 }
-
 
 /* ====== FORM (ADD) ====== */
 const form = document.getElementById('measureForm');
