@@ -114,15 +114,13 @@
 
   input, select, textarea, button { font-size: 16px !important; }
   #measureForm label, #dlgForm label { font-size: 14px; }
+  .topbar{position:sticky;top:0;background:#fff;padding:10px 0 14px 0;border-bottom:1px solid #eee;margin-bottom:14px;z-index:10}
+.btn{background:#0b6cf0;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer}
+.hint{margin-left:10px;color:#6b7280;font-size:12px}
+@media print{ .no-print{display:none!important} }
 </style>
 </head>
 <body>
-<div id="topbar" style="position:sticky;top:0;background:#fff;padding:10px 0 14px 0;border-bottom:1px solid #eee;margin-bottom:14px;z-index:10">
-  <button id="backBtn" style="background:#0b6cf0;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer">
-    ← Wróć do aplikacji
-  </button>
-  <span style="margin-left:10px;color:#6b7280;font-size:12px">Po wydruku wrócę automatycznie.</span>
-</div>
 
 <div class="wrap">
   <header>
@@ -813,6 +811,12 @@ function openPrintWindow(title, records){
         tr{break-inside:avoid}
       }
     </style></head><body>
+
+      <div class="topbar no-print">
+        <button id="backBtn" class="btn">← Wróć do aplikacji</button>
+        <span class="hint">Po wydruku wrócę automatycznie.</span>
+      </div>
+
       <h1>${escapeHtml(title)}</h1>
       <p class="sub">Liczba pomiarów: ${records.length} • Poprawne: ${validCount} • Niepoprawne: ${records.length - validCount}</p>
 
